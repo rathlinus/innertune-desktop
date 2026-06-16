@@ -1,0 +1,135 @@
+import { useEffect, useState } from "react";
+import type { ArtistCard, HomeCard, Playlist, Track } from "./types";
+import {
+  getLibraryAlbums,
+  getLibraryArtists,
+  getLibrarySongs,
+  getPlaylists,
+} from "./api";
+import { TrackList } from "./TrackList";
+
+type Tab = "playlists" | "songs" | "albums" | "artists";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "playlists", label: "Playlists" },
+  { key: "songs", label: "Songs" },
+  { key: "albums", label: "Alben" },
+  { key: "artists", label: "Künstler" },
+];
+
+interface Props {
+  nowId?: string;
+  onPlay: (t: Track, queue: Track[]) => void;
+  onOpenPlaylist: (playlistId: string, title: string) => void;
+  onOpenAlbum: (browseId: string) => void;
+  onOpenArtist: (browseId: string) => void;
+  onAdd: (t: Track) => void;
+  onLike: (t: Track) => void;
+  likes: Set<string>;
+}
+
+export function LibraryView(props: Props) {
+  const { nowId, onPlay, onOpenPlaylist, onOpenAlbum, onOpenArtist, onAdd, onLike, likes } = props;
+  const [tab, setTab] = useState<Tab>("playlists");
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [songs, setSongs] = useState<Track[]>([]);
+  const [albums, setAlbums] = useState<HomeCard[]>([]);
+  const [artists, setArtists] = useState<ArtistCard[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setErr(null);
+    setLoading(true);
+    const job =
+      tab === "playlists"
+        ? getPlaylists().then(setPlaylists)
+        : tab === "songs"
+        ? getLibrarySongs().then(setSongs)
+        : tab === "albums"
+        ? getLibraryAlbums().then(setAlbums)
+        : getLibraryArtists().then(setArtists);
+    job.catch((e) => setErr(String(e))).finally(() => setLoading(false));
+  }, [tab]);
+
+  return (
+    <div className="library">
+      <h1 className="page-title">Mediathek</h1>
+      <div className="filter-chips">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            className={`chip ${tab === t.key ? "chip-on" : ""}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && <div className="status">Wird geladen …</div>}
+      {err && <div className="status error">{err}</div>}
+
+      {!loading && !err && tab === "playlists" && (
+        <div className="card-grid">
+          {playlists.map((p) => (
+            <div
+              key={p.playlistId}
+              className="lib-card"
+              onClick={() => onOpenPlaylist(p.playlistId, p.title)}
+            >
+              {p.thumbnail ? (
+                <img className="lib-card-art" src={p.thumbnail} alt="" />
+              ) : (
+                <div className="lib-card-art lib-card-art-empty" />
+              )}
+              <div className="card-title">{p.title}</div>
+              <div className="card-sub">{p.count ? `${p.count} Songs` : "Playlist"}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && !err && tab === "songs" && (
+        <TrackList tracks={songs} nowId={nowId} onPlay={onPlay} onAdd={onAdd} onLike={onLike} likes={likes} />
+      )}
+
+      {!loading && !err && tab === "albums" && (
+        <div className="card-grid">
+          {albums.length === 0 && <div className="status muted">Keine gespeicherten Alben.</div>}
+          {albums.map((a, i) => (
+            <div
+              key={(a.browseId ?? "") + i}
+              className="lib-card"
+              onClick={() => a.browseId && onOpenAlbum(a.browseId)}
+            >
+              {a.thumbnail ? (
+                <img className="lib-card-art" src={a.thumbnail} alt="" />
+              ) : (
+                <div className="lib-card-art lib-card-art-empty" />
+              )}
+              <div className="card-title">{a.title}</div>
+              {a.subtitle && <div className="card-sub">{a.subtitle}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && !err && tab === "artists" && (
+        <div className="card-grid">
+          {artists.length === 0 && <div className="status muted">Keine Künstler in der Mediathek.</div>}
+          {artists.map((a) => (
+            <div key={a.browseId} className="lib-card" onClick={() => onOpenArtist(a.browseId)}>
+              {a.thumbnail ? (
+                <img className="lib-card-art lib-card-art-round" src={a.thumbnail} alt="" />
+              ) : (
+                <div className="lib-card-art lib-card-art-round lib-card-art-empty" />
+              )}
+              <div className="card-title">{a.name}</div>
+              {a.subtitle && <div className="card-sub">{a.subtitle}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

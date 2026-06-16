@@ -1,0 +1,42 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap");
+
+:root {
+  /* YouTube Music's real palette (sampled from their web player). */
+  --bg: #030303; /* main content */
+  --bg-sidebar: #030303;
+  --bg-elev: #212121; /* cards / inputs */
+  --bg-row-hover: #1f1f1f;
+  --bg-player: #181818;
+  --text: #ffffff;
+  --text-dim: #aaaaaa;
+  --accent: #ff0000; /* YT red, used sparingly */
+  --border: #2a2a2a;
+  font-family: "Roboto", system-ui, -apple-system, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: #383838;
+  border-radius: 6px;
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

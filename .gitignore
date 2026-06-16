@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────
+# Secrets / captured auth — NEVER commit these
+# Captured Chrome session, cookies and visitorData drive the real API.
+# ─────────────────────────────────────────────────────────────
+**/data/chrome-profile/
+**/data/cookies.txt
+**/data/session.json
+**/data/browser.json
+*.cookies
+*.session
+.env
+.env.*
+!.env.example
+
+# ─────────────────────────────────────────────────────────────
+# Large artifacts (APK + decompiled output)
+# ─────────────────────────────────────────────────────────────
+*.apk
+youtube-music-*.apk
+/decompiled/
+/frontend/bin/yt-dlp.exe
+*.exe
+
+# ─────────────────────────────────────────────────────────────
+# Node / frontend
+# ─────────────────────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# ─────────────────────────────────────────────────────────────
+# Python / backend
+# ─────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─────────────────────────────────────────────────────────────
+# RE probe scratch — keep the scripts, drop captured outputs
+# ─────────────────────────────────────────────────────────────
+_probe/*.json
+_probe/*.png
+
+# ─────────────────────────────────────────────────────────────
+# Logs
+# ─────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ─────────────────────────────────────────────────────────────
+# Editor / OS
+# ─────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?

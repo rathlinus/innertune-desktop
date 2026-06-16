@@ -1,0 +1,25 @@
+import type { Chip, HomeCard, Shelf } from "./types";
+import { CardShelf } from "./CardShelf";
+
+interface Props {
+  shelves: Shelf[];
+  nowId?: string;
+  onCard: (card: HomeCard) => void;
+  onChip?: (chip: Chip) => void;
+}
+
+export function Home({ shelves, nowId, onCard, onChip }: Props) {
+  return (
+    <div className="home">
+      {shelves.map((shelf, i) => (
+        <CardShelf
+          key={shelf.title ?? `shelf-${i}`}
+          shelf={shelf}
+          nowId={nowId}
+          onCard={onCard}
+          onChip={onChip}
+        />
+      ))}
+    </div>
+  );
+}
