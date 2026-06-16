@@ -2,6 +2,7 @@ import { useRef } from "react";
 import type { Chip, HomeCard, Shelf } from "./types";
 import {
   IconPlay,
+  IconMore,
   IconChevronLeft,
   IconChevronRight,
   IconTrendingUp,
@@ -23,11 +24,13 @@ export function CardShelf({
   nowId,
   onCard,
   onChip,
+  onMenu,
 }: {
   shelf: Shelf;
   nowId?: string;
   onCard: (c: HomeCard) => void;
   onChip?: (c: Chip) => void;
+  onMenu?: (c: HomeCard, e: React.MouseEvent) => void;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
 
@@ -86,6 +89,7 @@ export function CardShelf({
             card={card}
             active={!!card.videoId && card.videoId === nowId}
             onClick={() => onCard(card)}
+            onMenu={onMenu}
           />
         ))}
       </div>
@@ -97,10 +101,12 @@ function Card({
   card,
   active,
   onClick,
+  onMenu,
 }: {
   card: HomeCard;
   active: boolean;
   onClick: () => void;
+  onMenu?: (c: HomeCard, e: React.MouseEvent) => void;
 }) {
   return (
     <div
@@ -108,12 +114,22 @@ function Card({
         active ? "card-active" : ""
       }`}
       onClick={onClick}
+      onContextMenu={onMenu ? (e) => { e.preventDefault(); onMenu(card, e); } : undefined}
     >
       <div className="card-thumb">
         {card.thumbnail && <img src={card.thumbnail} alt="" loading="lazy" />}
         <button className="card-play" title="Abspielen">
           <IconPlay size={24} />
         </button>
+        {onMenu && (
+          <button
+            className="card-more"
+            title="Mehr"
+            onClick={(e) => { e.stopPropagation(); onMenu(card, e); }}
+          >
+            <IconMore size={20} />
+          </button>
+        )}
       </div>
       <div className="card-title" title={card.title}>
         {card.explicit && <span className="explicit">E</span>}

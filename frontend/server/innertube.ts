@@ -169,6 +169,49 @@ export interface AudioFormat {
   contentLength?: string;
 }
 
+// "Statistics for nerds" — the technical details of the audio the player is
+// actually pulling, read straight from the ANDROID_VR player response (the same
+// call resolveAudio uses). Codec/container are split out of the mimeType and the
+// playback loudness comes from playerConfig.audioConfig.
+export interface StreamInfo {
+  videoId: string;
+  itag: number | null;
+  codec: string | null;
+  container: string | null;
+  bitrate: number | null;
+  averageBitrate: number | null;
+  audioSampleRate: string | null;
+  audioChannels: number | null;
+  contentLength: string | null;
+  loudnessDb: number | null;
+  client: string;
+}
+
+export async function streamInfo(videoId: string): Promise<StreamInfo> {
+  const pr = await callPlayer(videoId);
+  const formats: any[] = pr?.streamingData?.adaptiveFormats ?? [];
+  const f =
+    formats
+      .filter((x) => x.url && typeof x.mimeType === "string" && x.mimeType.includes("audio"))
+      .sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0] ?? {};
+  const mime: string = f.mimeType ?? "";
+  const container = mime.split(";")[0]?.split("/")[1] ?? null;
+  const codec = /codecs="([^"]+)"/.exec(mime)?.[1] ?? null;
+  return {
+    videoId,
+    itag: f.itag ?? null,
+    codec,
+    container,
+    bitrate: f.bitrate ?? null,
+    averageBitrate: f.averageBitrate ?? null,
+    audioSampleRate: f.audioSampleRate ?? null,
+    audioChannels: f.audioChannels ?? null,
+    contentLength: f.contentLength ?? null,
+    loudnessDb: pr?.playerConfig?.audioConfig?.loudnessDb ?? null,
+    client: "ANDROID_VR",
+  };
+}
+
 // Resolve the best direct audio URL for a video via the ANDROID_VR player.
 // Picks the highest-bitrate audio-only format that carries a ready `url`
 // (anonymous ANDROID_VR tops out around itag 251 opus ~150k / itag 140 aac).

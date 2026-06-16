@@ -10,7 +10,7 @@
 
 import { Readable } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { resolveAudio } from "./innertube";
+import { resolveAudio, type AudioFormat } from "./innertube";
 
 // Resolved URLs are short-lived signed links (the `expire` query param is hours
 // out, but be conservative); cache them briefly to avoid a player round-trip on
@@ -24,6 +24,46 @@ async function resolveUrl(videoId: string): Promise<string> {
   const { url } = await resolveAudio(videoId);
   cache.set(videoId, { url, expires: Date.now() + TTL_MS });
   return url;
+}
+
+// Pick a sensible file extension for a downloaded audio container.
+function extFor(fmt: AudioFormat): string {
+  if (fmt.mimeType.includes("audio/mp4")) return "m4a";
+  if (fmt.mimeType.includes("audio/webm")) return "weba";
+  return "audio";
+}
+
+// Sanitize a track title/artist into a safe download filename.
+function safeName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "audio";
+}
+
+// "Herunterladen" — stream the full audio with a Content-Disposition so the
+// browser/Electron saves it to disk with a real song name + matching extension.
+export async function downloadAudio(
+  videoId: string,
+  name: string,
+  res: ServerResponse
+): Promise<void> {
+  let fmt: AudioFormat;
+  try {
+    fmt = await resolveAudio(videoId);
+  } catch (e) {
+    res.writeHead(502, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `resolve failed: ${e}` }));
+    return;
+  }
+  const upstream = await fetch(fmt.url);
+  const filename = `${safeName(name || videoId)}.${extFor(fmt)}`;
+  const headers: Record<string, string> = {
+    "Content-Type": fmt.mimeType.split(";")[0] || "application/octet-stream",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+  };
+  const len = upstream.headers.get("content-length");
+  if (len) headers["Content-Length"] = len;
+  res.writeHead(upstream.status, headers);
+  if (upstream.body) Readable.fromWeb(upstream.body as any).pipe(res);
+  else res.end();
 }
 
 export async function streamAudio(

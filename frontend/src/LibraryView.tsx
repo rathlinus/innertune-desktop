@@ -7,6 +7,27 @@ import {
   getPlaylists,
 } from "./api";
 import { TrackList } from "./TrackList";
+import { IconMore } from "./icons";
+
+const playlistCard = (p: Playlist): HomeCard => ({
+  kind: "playlist",
+  playlistId: p.playlistId,
+  browseId: p.playlistId,
+  title: p.title,
+  subtitle: typeof p.count === "number" ? `${p.count} Songs` : (p.count ?? null),
+  thumbnail: p.thumbnail,
+  aspect: "square",
+  explicit: false,
+});
+const artistCard = (a: ArtistCard): HomeCard => ({
+  kind: "playlist",
+  browseId: a.browseId,
+  title: a.name ?? "",
+  subtitle: a.subtitle,
+  thumbnail: a.thumbnail,
+  aspect: "square",
+  explicit: false,
+});
 
 type Tab = "playlists" | "songs" | "albums" | "artists";
 const TABS: { key: Tab; label: string }[] = [
@@ -25,10 +46,12 @@ interface Props {
   onAdd: (t: Track) => void;
   onLike: (t: Track) => void;
   likes: Set<string>;
+  onMenu: (t: Track, e: React.MouseEvent) => void;
+  onCardMenu: (card: HomeCard, e: React.MouseEvent) => void;
 }
 
 export function LibraryView(props: Props) {
-  const { nowId, onPlay, onOpenPlaylist, onOpenAlbum, onOpenArtist, onAdd, onLike, likes } = props;
+  const { nowId, onPlay, onOpenPlaylist, onOpenAlbum, onOpenArtist, onAdd, onLike, likes, onMenu, onCardMenu } = props;
   const [tab, setTab] = useState<Tab>("playlists");
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [songs, setSongs] = useState<Track[]>([]);
@@ -76,12 +99,19 @@ export function LibraryView(props: Props) {
               key={p.playlistId}
               className="lib-card"
               onClick={() => onOpenPlaylist(p.playlistId, p.title)}
+              onContextMenu={(e) => { e.preventDefault(); onCardMenu(playlistCard(p), e); }}
             >
-              {p.thumbnail ? (
-                <img className="lib-card-art" src={p.thumbnail} alt="" loading="lazy" />
-              ) : (
-                <div className="lib-card-art lib-card-art-empty" />
-              )}
+              <div className="lib-card-art-wrap">
+                {p.thumbnail ? (
+                  <img className="lib-card-art" src={p.thumbnail} alt="" loading="lazy" />
+                ) : (
+                  <div className="lib-card-art lib-card-art-empty" />
+                )}
+                <button className="card-more lib-card-more" title="Mehr"
+                  onClick={(e) => { e.stopPropagation(); onCardMenu(playlistCard(p), e); }}>
+                  <IconMore size={20} />
+                </button>
+              </div>
               <div className="card-title">{p.title}</div>
               <div className="card-sub">{p.count ? `${p.count} Songs` : "Playlist"}</div>
             </div>
@@ -90,7 +120,7 @@ export function LibraryView(props: Props) {
       )}
 
       {!loading && !err && tab === "songs" && (
-        <TrackList tracks={songs} nowId={nowId} onPlay={onPlay} onAdd={onAdd} onLike={onLike} likes={likes} />
+        <TrackList tracks={songs} nowId={nowId} onPlay={onPlay} onAdd={onAdd} onLike={onLike} likes={likes} onMenu={onMenu} />
       )}
 
       {!loading && !err && tab === "albums" && (
@@ -101,12 +131,19 @@ export function LibraryView(props: Props) {
               key={(a.browseId ?? "") + i}
               className="lib-card"
               onClick={() => a.browseId && onOpenAlbum(a.browseId)}
+              onContextMenu={(e) => { e.preventDefault(); onCardMenu(a, e); }}
             >
-              {a.thumbnail ? (
-                <img className="lib-card-art" src={a.thumbnail} alt="" loading="lazy" />
-              ) : (
-                <div className="lib-card-art lib-card-art-empty" />
-              )}
+              <div className="lib-card-art-wrap">
+                {a.thumbnail ? (
+                  <img className="lib-card-art" src={a.thumbnail} alt="" loading="lazy" />
+                ) : (
+                  <div className="lib-card-art lib-card-art-empty" />
+                )}
+                <button className="card-more lib-card-more" title="Mehr"
+                  onClick={(e) => { e.stopPropagation(); onCardMenu(a, e); }}>
+                  <IconMore size={20} />
+                </button>
+              </div>
               <div className="card-title">{a.title}</div>
               {a.subtitle && <div className="card-sub">{a.subtitle}</div>}
             </div>
@@ -118,12 +155,19 @@ export function LibraryView(props: Props) {
         <div className="card-grid">
           {artists.length === 0 && <div className="status muted">Keine Künstler in der Mediathek.</div>}
           {artists.map((a) => (
-            <div key={a.browseId} className="lib-card" onClick={() => onOpenArtist(a.browseId)}>
-              {a.thumbnail ? (
-                <img className="lib-card-art lib-card-art-round" src={a.thumbnail} alt="" loading="lazy" />
-              ) : (
-                <div className="lib-card-art lib-card-art-round lib-card-art-empty" />
-              )}
+            <div key={a.browseId} className="lib-card" onClick={() => onOpenArtist(a.browseId)}
+              onContextMenu={(e) => { e.preventDefault(); onCardMenu(artistCard(a), e); }}>
+              <div className="lib-card-art-wrap">
+                {a.thumbnail ? (
+                  <img className="lib-card-art lib-card-art-round" src={a.thumbnail} alt="" loading="lazy" />
+                ) : (
+                  <div className="lib-card-art lib-card-art-round lib-card-art-empty" />
+                )}
+                <button className="card-more lib-card-more" title="Mehr"
+                  onClick={(e) => { e.stopPropagation(); onCardMenu(artistCard(a), e); }}>
+                  <IconMore size={20} />
+                </button>
+              </div>
               <div className="card-title">{a.name}</div>
               {a.subtitle && <div className="card-sub">{a.subtitle}</div>}
             </div>

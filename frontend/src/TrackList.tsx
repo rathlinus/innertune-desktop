@@ -1,5 +1,5 @@
 import type { Track } from "./types";
-import { IconPlay, IconThumbUp, IconAdd, IconTrash } from "./icons";
+import { IconPlay, IconThumbUp, IconAdd, IconTrash, IconMore } from "./icons";
 
 interface Props {
   tracks: Track[];
@@ -10,10 +10,11 @@ interface Props {
   likes?: Set<string>;
   onAdd?: (t: Track) => void; // add to a playlist
   onRemove?: (t: Track) => void; // remove from the current (editable) playlist
+  onMenu?: (t: Track, e: React.MouseEvent) => void; // open the context menu
 }
 
-export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemove }: Props) {
-  const hasActions = !!(onLike || onAdd || onRemove);
+export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemove, onMenu }: Props) {
+  const hasActions = !!(onLike || onAdd || onRemove || onMenu);
   return (
     <div className={`results ${hasActions ? "results-actions" : ""}`}>
       {tracks.map((t, i) => {
@@ -24,6 +25,7 @@ export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemov
             key={t.videoId + i}
             className={`row ${active ? "row-active" : ""}`}
             onDoubleClick={() => onPlay(t, tracks)}
+            onContextMenu={onMenu ? (e) => { e.preventDefault(); onMenu(t, e); } : undefined}
           >
             <div className="row-art-wrap">
               {t.thumbnail && <img className="row-art" src={t.thumbnail} alt="" loading="lazy" />}
@@ -55,6 +57,11 @@ export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemov
                 {onRemove && (
                   <button className="row-act" onClick={() => onRemove(t)} title="Aus Playlist entfernen">
                     <IconTrash size={18} />
+                  </button>
+                )}
+                {onMenu && (
+                  <button className="row-act" onClick={(e) => onMenu(t, e)} title="Mehr">
+                    <IconMore size={18} />
                   </button>
                 )}
               </div>

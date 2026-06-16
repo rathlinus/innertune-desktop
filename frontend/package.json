@@ -26,14 +26,21 @@
       "output": "release"
     },
     "files": [
-      "build/electron/main.cjs",
+      "build/electron/*.cjs",
       "dist/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build-resources/icon.png",
+        "to": "icon.png"
+      }
     ],
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build-resources/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -44,7 +51,8 @@
       "target": [
         "AppImage"
       ],
-      "category": "AudioVideo"
+      "category": "AudioVideo",
+      "icon": "build-resources/icon.png"
     }
   },
   "dependencies": {

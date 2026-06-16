@@ -14,6 +14,7 @@
 import { app, BrowserWindow, shell, session } from "electron";
 import path from "node:path";
 import { startServer, type ServeHandle } from "../server/serve";
+import { attachTaskbar } from "./taskbar";
 
 let serveHandle: ServeHandle | null = null;
 let win: BrowserWindow | null = null;
@@ -23,6 +24,17 @@ function distDir(): string {
   return app.isPackaged
     ? path.join(app.getAppPath(), "dist")
     : path.join(__dirname, "..", "..", "dist");
+}
+
+// The YouTube Music app icon. On Windows the packaged .exe already carries the
+// embedded icon (electron-builder win.icon), but setting it on the window keeps
+// the taskbar/title-bar icon correct in dev and is required for the Linux
+// AppImage window. Shipped via electron-builder extraResources in production,
+// read straight from build-resources/ in dev.
+function iconFile(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "icon.png")
+    : path.join(__dirname, "..", "..", "build-resources", "icon.png");
 }
 
 async function resolveUrl(): Promise<string> {
@@ -62,11 +74,17 @@ async function createWindow(): Promise<void> {
     backgroundColor: "#0f0f0f",
     autoHideMenuBar: true,
     title: "Innertune",
+    icon: iconFile(),
     webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  // Wire the Windows taskbar (thumbnail toolbar buttons + progress bar) to the
+  // renderer's playback state. No-op on other platforms.
+  attachTaskbar(win);
 
   // Keep in-app navigation in the window; send real external links (e.g. the
   // login flow's "open in browser") to the system browser.
@@ -81,22 +99,67 @@ async function createWindow(): Promise<void> {
   });
 }
 
-app.whenReady().then(() => {
-  // Captured session/cookies must live somewhere writable in a packaged app.
-  process.env.YTM_DATA ||= path.join(app.getPath("userData"), "data");
+// Transport commands accepted on the command line, e.g. `innertune --next`.
+// Handy on Linux for binding desktop/global shortcuts to a single AppImage (the
+// flag is forwarded to the already-running instance below); harmless elsewhere.
+const CONTROL_ARGS: Record<string, string> = {
+  "--play-pause": "playpause",
+  "--play": "play",
+  "--pause": "pause",
+  "--next": "next",
+  "--previous": "previous",
+  "--prev": "previous",
+};
 
-  spoofImageReferer();
-  void createWindow();
+function controlFromArgv(argv: string[]): string | null {
+  for (const a of argv) if (Object.hasOwn(CONTROL_ARGS, a)) return CONTROL_ARGS[a];
+  return null;
+}
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+function sendControl(action: string): void {
+  if (win && !win.isDestroyed()) win.webContents.send("playback:control", action);
+}
+
+// Single-instance: a second launch (e.g. clicking the icon again, or a shortcut
+// bound to `--next`) hands its argv to the running instance instead of opening a
+// duplicate window — which would mean two players fighting over playback.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", (_e, argv) => {
+    const action = controlFromArgv(argv);
+    if (action) {
+      sendControl(action);
+      return;
+    }
+    // A plain relaunch: surface the existing window.
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
   });
-});
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+  app.whenReady().then(() => {
+    // Make Windows group the window/notifications under our own identity (and so
+    // pick up the app icon) instead of the generic Electron one.
+    if (process.platform === "win32") app.setAppUserModelId("com.rathlinus.innertune");
 
-app.on("before-quit", () => {
-  void serveHandle?.close();
-});
+    // Captured session/cookies must live somewhere writable in a packaged app.
+    process.env.YTM_DATA ||= path.join(app.getPath("userData"), "data");
+
+    spoofImageReferer();
+    void createWindow();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    });
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("before-quit", () => {
+    void serveHandle?.close();
+  });
+}

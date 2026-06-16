@@ -28,6 +28,8 @@ import {
   related,
   history,
   rate,
+  feedback,
+  streamInfo,
   subscribe,
   createPlaylist,
   deletePlaylist,
@@ -35,7 +37,7 @@ import {
   removeFromPlaylist,
   renamePlaylist,
 } from "./ytm";
-import { streamAudio } from "./stream";
+import { streamAudio, downloadAudio } from "./stream";
 import { NotAuthedError } from "./innertube";
 import {
   startLogin,
@@ -43,6 +45,7 @@ import {
   getLoginState,
   logout,
 } from "./chrome";
+import { account } from "./account";
 
 function sendJson(res: ServerResponse, code: number, body: unknown) {
   const data = JSON.stringify(body);
@@ -76,6 +79,17 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
     // ---- streaming ----
     if (route.startsWith("/stream/")) {
       await streamAudio(decodeURIComponent(route.slice("/stream/".length)), req, res);
+      return true;
+    }
+    if (route.startsWith("/download/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/download/".length));
+      const name = url.searchParams.get("name") || id;
+      await downloadAudio(id, name, res);
+      return true;
+    }
+    if (route.startsWith("/player-info/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/player-info/".length));
+      sendJson(res, 200, await streamInfo(id));
       return true;
     }
 
@@ -181,6 +195,14 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
       sendJson(res, 200, { ok: true });
       return true;
     }
+    if (route === "/account" && method === "GET") {
+      if (!isAuthenticated()) {
+        sendJson(res, 401, { detail: "not authenticated" });
+        return true;
+      }
+      sendJson(res, 200, await account());
+      return true;
+    }
 
     // ---- library + history (require a captured session) ----
     if (route.startsWith("/library/") || route === "/history") {
@@ -219,6 +241,7 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
     // ---- mutations (POST; write to the real account — require a session) ----
     const MUTATIONS = new Set([
       "/rate",
+      "/feedback",
       "/subscribe",
       "/playlist/create",
       "/playlist/delete",
@@ -235,6 +258,9 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
       switch (route) {
         case "/rate":
           await rate(b.videoId, b.rating);
+          break;
+        case "/feedback":
+          await feedback(b.tokens ?? []);
           break;
         case "/subscribe":
           await subscribe(b.channelId, !!b.subscribe);

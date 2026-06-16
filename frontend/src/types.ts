@@ -7,6 +7,27 @@ export interface Track {
   durationSeconds: number | null;
   thumbnail: string | null;
   setVideoId?: string | null; // only on playlist tracks; needed to remove them
+  // Context-menu extras (from the row's menu — see server parse.ts menuExtras).
+  channelId?: string | null; // "Künstlerseite anzeigen"
+  albumBrowseId?: string | null; // "Album anzeigen"
+  libraryAddToken?: string | null; // feedback token: add to library
+  libraryRemoveToken?: string | null; // feedback token: remove from library
+  inLibrary?: boolean; // current library membership at fetch time
+}
+
+// "Statistiken für Interessierte" — technical details of the audio stream.
+export interface StreamInfo {
+  videoId: string;
+  itag: number | null;
+  codec: string | null;
+  container: string | null;
+  bitrate: number | null;
+  averageBitrate: number | null;
+  audioSampleRate: string | null;
+  audioChannels: number | null;
+  contentLength: string | null;
+  loudnessDb: number | null;
+  client: string;
 }
 
 export interface Playlist {
@@ -25,6 +46,12 @@ export type LoginState =
 export interface AuthStatus {
   authenticated: boolean;
   login?: LoginState;
+}
+
+export interface Account {
+  name: string | null;
+  handle: string | null;
+  photo: string | null;
 }
 
 export interface Lyrics {
@@ -68,6 +95,11 @@ export interface SearchResult {
   thumbnail: string | null;
   duration: string | null;
   explicit: boolean;
+  channelId?: string | null;
+  albumBrowseId?: string | null;
+  libraryAddToken?: string | null;
+  libraryRemoveToken?: string | null;
+  inLibrary?: boolean;
 }
 
 export interface ArtistPage {

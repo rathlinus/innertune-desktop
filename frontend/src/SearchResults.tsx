@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { SearchResult, Track } from "./types";
+import type { HomeCard, SearchResult, Track } from "./types";
 import { searchItems } from "./api";
 import { TrackList } from "./TrackList";
+import { IconMore } from "./icons";
 
 const FILTERS = [
   { key: "songs", label: "Songs" },
@@ -19,7 +20,22 @@ interface Props {
   onOpenAlbum: (browseId: string) => void;
   onOpenPlaylist: (playlistId: string, title: string) => void;
   onAdd: (t: Track) => void;
+  onMenu: (t: Track, e: React.MouseEvent) => void;
+  onCardMenu: (card: HomeCard, e: React.MouseEvent) => void;
 }
+
+// Map a non-song search result to the HomeCard shape the card menu expects.
+const toCard = (i: SearchResult): HomeCard => ({
+  kind: i.kind === "album" ? "album" : "playlist",
+  videoId: i.videoId,
+  playlistId: i.playlistId,
+  browseId: i.browseId,
+  title: i.title ?? "",
+  subtitle: i.subtitle,
+  thumbnail: i.thumbnail,
+  aspect: "square",
+  explicit: i.explicit,
+});
 
 const toTrack = (r: SearchResult): Track => ({
   videoId: r.videoId ?? "",
@@ -29,6 +45,11 @@ const toTrack = (r: SearchResult): Track => ({
   duration: r.duration,
   durationSeconds: null,
   thumbnail: r.thumbnail,
+  channelId: r.channelId,
+  albumBrowseId: r.albumBrowseId,
+  libraryAddToken: r.libraryAddToken,
+  libraryRemoveToken: r.libraryRemoveToken,
+  inLibrary: r.inLibrary,
 });
 
 export function SearchResults({
@@ -39,6 +60,8 @@ export function SearchResults({
   onOpenAlbum,
   onOpenPlaylist,
   onAdd,
+  onMenu,
+  onCardMenu,
 }: Props) {
   const [filter, setFilter] = useState("songs");
   const [items, setItems] = useState<SearchResult[]>([]);
@@ -80,7 +103,7 @@ export function SearchResults({
       {err && <div className="status error">{err}</div>}
 
       {!loading && !err && playable && (
-        <TrackList tracks={songs} nowId={nowId} onPlay={(t) => onPlay(t, songs)} onAdd={onAdd} />
+        <TrackList tracks={songs} nowId={nowId} onPlay={(t) => onPlay(t, songs)} onAdd={onAdd} onMenu={onMenu} />
       )}
 
       {!loading && !err && !playable && (
@@ -95,17 +118,27 @@ export function SearchResults({
                 else if (i.kind === "playlist")
                   onOpenPlaylist(i.playlistId ?? i.browseId!, i.title ?? "");
               }}
+              onContextMenu={(e) => { e.preventDefault(); onCardMenu(toCard(i), e); }}
             >
-              {i.thumbnail ? (
-                <img
-                  className={`lib-card-art ${i.kind === "artist" ? "lib-card-art-round" : ""}`}
-                  src={i.thumbnail}
-                  alt=""
-                  loading="lazy"
-                />
-              ) : (
-                <div className="lib-card-art lib-card-art-empty" />
-              )}
+              <div className="lib-card-art-wrap">
+                {i.thumbnail ? (
+                  <img
+                    className={`lib-card-art ${i.kind === "artist" ? "lib-card-art-round" : ""}`}
+                    src={i.thumbnail}
+                    alt=""
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="lib-card-art lib-card-art-empty" />
+                )}
+                <button
+                  className="card-more lib-card-more"
+                  title="Mehr"
+                  onClick={(e) => { e.stopPropagation(); onCardMenu(toCard(i), e); }}
+                >
+                  <IconMore size={20} />
+                </button>
+              </div>
               <div className="card-title">
                 {i.explicit && <span className="explicit">E</span>}
                 {i.title}

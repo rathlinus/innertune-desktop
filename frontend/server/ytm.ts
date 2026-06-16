@@ -2,7 +2,7 @@
 // (see innertube.ts), no wrapper libraries. Responses are parsed from raw
 // renderer JSON in parse.ts. Audio is handled separately (stream.ts).
 
-import { callMusic } from "./innertube";
+import { callMusic, streamInfo as playerStreamInfo, type StreamInfo } from "./innertube";
 import {
   parseTracks,
   parseHome,
@@ -224,6 +224,21 @@ export async function rate(videoId: string, rating: Rating): Promise<void> {
   const ep =
     rating === "LIKE" ? "like/like" : rating === "DISLIKE" ? "like/dislike" : "like/removelike";
   await callMusic(ep, { target: { videoId } });
+}
+
+// Toggle library membership (and "listen again") via the feedback endpoint.
+// The tokens come embedded in each track row's menu (Track.libraryAddToken /
+// libraryRemoveToken — see parse.ts menuExtras). Verified reversibly against the
+// live account: POST feedback { feedbackTokens:[token] } → { isProcessed:true }.
+export async function feedback(tokens: string[]): Promise<void> {
+  const valid = tokens.filter(Boolean);
+  if (!valid.length) return;
+  await callMusic("feedback", { feedbackTokens: valid });
+}
+
+// "Statistics for nerds" for the current track's audio stream.
+export async function streamInfo(videoId: string): Promise<StreamInfo> {
+  return playerStreamInfo(videoId);
 }
 
 // Subscribe / unsubscribe to an artist channel.

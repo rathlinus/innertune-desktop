@@ -183,6 +183,7 @@ async function getAllCookies(): Promise<CdpCookie[]> {
 }
 
 interface Ytcfg {
+  loggedIn: boolean;
   visitorData: string | null;
   apiKey: string | null;
   clientVersion: string | null;
@@ -194,6 +195,7 @@ interface Ytcfg {
 // `ytcfg`. This is what lets us replicate its youtubei/v1 requests verbatim.
 async function getYtcfg(): Promise<Ytcfg> {
   const empty: Ytcfg = {
+    loggedIn: false,
     visitorData: null,
     apiKey: null,
     clientVersion: null,
@@ -213,6 +215,7 @@ async function getYtcfg(): Promise<Ytcfg> {
           var g = (window.ytcfg && ytcfg.get) ? ytcfg.get.bind(ytcfg) : function () { return undefined; };
           var ctx = g('INNERTUBE_CONTEXT') || null;
           return {
+            loggedIn: g('LOGGED_IN') === true,
             visitorData: g('VISITOR_DATA') || (ctx && ctx.client && ctx.client.visitorData) || null,
             apiKey: g('INNERTUBE_API_KEY') || null,
             clientVersion: g('INNERTUBE_CLIENT_VERSION') || (ctx && ctx.client && ctx.client.clientVersion) || null,
@@ -325,9 +328,20 @@ async function watchForLogin(): Promise<void> {
       const cookies = await getAllCookies();
       const signedIn = cookies.some((c) => c.name === AUTH_COOKIE && c.value);
       if (signedIn) {
-        await capture(cookies);
-        loginState = { status: "captured" };
-        return;
+        // The SAPISID cookie is set on .google.com mid-login, *before* the
+        // browser lands back on music.youtube.com and the web client reboots as
+        // authenticated. Capturing on the bare cookie races that redirect and
+        // yields a partial session — most importantly a missing/stale
+        // visitor_data, which leaves audio bot-walled (see callPlayer). That's
+        // why the first login attempt used to need a second click. So we wait
+        // until the live music client reports it's actually logged in and
+        // exposes its blessed visitorData before capturing.
+        const cfg = await getYtcfg();
+        if (cfg.loggedIn && cfg.visitorData) {
+          await capture(cookies, cfg);
+          loginState = { status: "captured" };
+          return;
+        }
       }
     } catch {
       // Port not ready yet, or Chrome was closed — keep trying until deadline.
@@ -341,9 +355,8 @@ async function watchForLogin(): Promise<void> {
   };
 }
 
-async function capture(cookies: CdpCookie[]): Promise<void> {
+async function capture(cookies: CdpCookie[], cfg: Ytcfg): Promise<void> {
   mkdirSync(dataDir(), { recursive: true });
-  const cfg = await getYtcfg();
   const session: Session = {
     cookie: toCookieHeader(cookies),
     visitor_data: cfg.visitorData,

@@ -30,6 +30,7 @@
 .topbar-right {
   display: flex;
   justify-content: flex-end;
+  position: relative;
 }
 .icon-btn {
   background: none;
@@ -159,6 +160,92 @@
   border: none;
   cursor: pointer;
   font-family: inherit;
+  overflow: hidden;
+  padding: 0;
+}
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- Account dropdown ---------- */
+.account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 500;
+  width: 300px;
+  padding: 8px;
+  background: #282828;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  animation: track-fade 0.12s ease both;
+}
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 12px;
+}
+.account-photo {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.account-photo-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #3949ab;
+  color: #fff;
+}
+.account-id {
+  min-width: 0;
+}
+.account-name {
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-handle {
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0;
+}
+.account-action {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 11px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.account-action:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.account-action svg {
+  color: var(--text-dim);
 }
 
 /* ---------- Sidebar ---------- */
@@ -1013,7 +1100,7 @@
 /* Album art doubles as a play/pause toggle with a hover overlay. */
 .fsp-art-wrap {
   position: relative;
-  width: min(48vh, 460px);
+  width: min(62vh, 560px);
   aspect-ratio: 1;
   flex: 0 0 auto;
   padding: 0;
@@ -1056,7 +1143,7 @@
 }
 .fsp-meta {
   /* Left-aligned with the art above it */
-  width: min(48vh, 460px);
+  width: min(62vh, 560px);
   max-width: 100%;
   min-width: 0;
   text-align: left;
@@ -1734,4 +1821,212 @@ input[type="range"]::-moz-range-thumb {
 input[type="range"]:hover::-webkit-slider-thumb,
 input[type="range"]:hover::-moz-range-thumb {
   opacity: 1;
+}
+
+/* ---------- Context menu (right-click / overflow) ---------- */
+.ctx-menu {
+  position: fixed;
+  z-index: 500;
+  min-width: 270px;
+  max-width: 320px;
+  padding: 6px;
+  background: #282828;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  animation: track-fade 0.12s ease both;
+}
+.ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 9px 12px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctx-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.ctx-item svg {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+.ctx-item.ctx-on,
+.ctx-item.ctx-on svg {
+  color: var(--accent);
+}
+.ctx-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Queue (up-next) panel ---------- */
+.queue-panel {
+  position: fixed;
+  top: 64px;
+  right: 0;
+  bottom: 72px;
+  width: 360px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-player);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  z-index: 350;
+  animation: track-fade 0.16s ease both;
+}
+.queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.queue-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.queue-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.queue-row:hover {
+  background: var(--bg-row-hover);
+}
+.queue-row-active .queue-title {
+  color: var(--accent);
+}
+.queue-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.queue-info {
+  flex: 1;
+  min-width: 0;
+}
+.queue-title {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-artist {
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-row .row-act {
+  opacity: 0;
+}
+.queue-row:hover .row-act {
+  opacity: 1;
+}
+
+/* ---------- Stats-for-nerds modal ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 600;
+  animation: track-fade 0.15s ease both;
+}
+.stats-modal {
+  width: 440px;
+  max-width: 92vw;
+  background: #212121;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 22px;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.stats-title {
+  margin: 4px 0 14px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.stats-table tr {
+  border-bottom: 1px solid var(--border);
+}
+.stats-key {
+  padding: 7px 8px 7px 0;
+  color: var(--text-dim);
+  width: 42%;
+}
+.stats-val {
+  padding: 7px 0;
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  word-break: break-all;
+}
+
+/* ---------- Card overflow (⋮) button — carousel + grid cards ---------- */
+.card-more {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  z-index: 2;
+}
+.card-more:hover {
+  background: rgba(0, 0, 0, 0.85);
+}
+.card-thumb:hover .card-more,
+.lib-card:hover .lib-card-more {
+  opacity: 1;
+}
+/* Grid cards (search/library) wrap the art so the ⋮ can sit over it. The art's
+   own bottom margin stays the card-to-title gap. */
+.lib-card-art-wrap {
+  position: relative;
 }

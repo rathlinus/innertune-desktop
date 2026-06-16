@@ -11,9 +11,11 @@ interface Props {
   onPlay: (t: Track, queue: Track[]) => void;
   onCard: (c: HomeCard) => void;
   onAdd?: (t: Track) => void;
+  onMenu?: (t: Track, e: React.MouseEvent) => void;
+  onCardMenu?: (c: HomeCard, e: React.MouseEvent) => void;
 }
 
-export function ArtistView({ browseId, nowId, onPlay, onCard, onAdd }: Props) {
+export function ArtistView({ browseId, nowId, onPlay, onCard, onAdd, onMenu, onCardMenu }: Props) {
   const [data, setData] = useState<ArtistPage | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [subscribed, setSubscribed] = useState(false);
@@ -73,12 +75,12 @@ export function ArtistView({ browseId, nowId, onPlay, onCard, onAdd }: Props) {
       {data.songs.length > 0 && (
         <>
           <h2 className="section-title">Songs</h2>
-          <TrackList tracks={data.songs} nowId={nowId} onPlay={onPlay} onAdd={onAdd} />
+          <TrackList tracks={data.songs} nowId={nowId} onPlay={onPlay} onAdd={onAdd} onMenu={onMenu} />
         </>
       )}
 
       {data.shelves.map((sh) => (
-        <CardShelf key={sh.title} shelf={sh} nowId={nowId} onCard={onCard} />
+        <CardShelf key={sh.title} shelf={sh} nowId={nowId} onCard={onCard} onMenu={onCardMenu} />
       ))}
     </div>
   );

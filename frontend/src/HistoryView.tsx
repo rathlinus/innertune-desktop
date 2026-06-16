@@ -9,9 +9,10 @@ interface Props {
   onAdd: (t: Track) => void;
   onLike: (t: Track) => void;
   likes: Set<string>;
+  onMenu: (t: Track, e: React.MouseEvent) => void;
 }
 
-export function HistoryView({ nowId, onPlay, onAdd, onLike, likes }: Props) {
+export function HistoryView({ nowId, onPlay, onAdd, onLike, likes, onMenu }: Props) {
   const [sections, setSections] = useState<HistorySection[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -37,6 +38,7 @@ export function HistoryView({ nowId, onPlay, onAdd, onLike, likes }: Props) {
             onAdd={onAdd}
             onLike={onLike}
             likes={likes}
+            onMenu={onMenu}
           />
         </section>
       ))}

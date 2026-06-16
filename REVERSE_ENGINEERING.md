@@ -168,8 +168,10 @@ via `parse.ts` helpers: `findOne`, `findAll`, `text`, `thumb`, `hiRes`,
 
 **Field rules learned:**
 - Text: `runs[].text` joined, or `simpleText`.
-- Thumbnails: deepest `thumbnails[]` → last is largest; upscale Google art by
-  rewriting `=w60-h60` / `=s90` → `=w544-h544` / `=s544` (`hiRes`).
+- Thumbnails: deepest `thumbnails[]` → last is largest; strip Google's resize
+  suffix (`=w60-h60-l90-rj`, `=s90-c-k-...`) to request the canonical stored
+  original (`hiRes`). Synthesizing a custom size hits Google's on-demand resize
+  backend, which 429s far sooner than the cached original.
 - Endpoints: `watchEndpoint.videoId` (+`playlistId`) for playables;
   `browseEndpoint.browseId` + `...browseEndpointContextMusicConfig.pageType` for
   navigation. `pageType` values: `MUSIC_PAGE_TYPE_ALBUM`,

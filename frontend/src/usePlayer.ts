@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Track } from "./types";
 import { streamUrl } from "./api";
+import { useNativeMedia } from "./useNativeMedia";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -166,6 +167,67 @@ export function usePlayer() {
     [patch, persist]
   );
 
+  // "Als Nächstes abspielen" — insert one or more tracks right after the current
+  // one (in order) so they play next without disturbing the rest of the queue.
+  const playNext = useCallback(
+    (track: Track | Track[]) => {
+      const items = Array.isArray(track) ? track : [track];
+      if (!items.length) return;
+      const q = queueRef.current;
+      const insertAt = indexRef.current < 0 ? q.length : indexRef.current + 1;
+      const next = [...q.slice(0, insertAt), ...items, ...q.slice(insertAt)];
+      queueRef.current = next;
+      patch({ queue: next });
+      persist();
+    },
+    [patch, persist]
+  );
+
+  // "In die Wiedergabeliste" — append one or more tracks to the end of the queue.
+  const enqueue = useCallback(
+    (track: Track | Track[]) => {
+      const items = Array.isArray(track) ? track : [track];
+      if (!items.length) return;
+      const next = [...queueRef.current, ...items];
+      queueRef.current = next;
+      patch({ queue: next });
+      persist();
+    },
+    [patch, persist]
+  );
+
+  // "Aus Wiedergabeliste entfernen" — drop the item at `i`, keeping the playing
+  // track stable. Removing the current track advances to the one that shifts
+  // into its slot (or stops if the queue empties).
+  const removeFromQueue = useCallback(
+    (i: number) => {
+      const q = queueRef.current;
+      if (i < 0 || i >= q.length) return;
+      const cur = indexRef.current;
+      const next = [...q.slice(0, i), ...q.slice(i + 1)];
+      queueRef.current = next;
+      if (i < cur) {
+        indexRef.current = cur - 1;
+        patch({ queue: next, index: indexRef.current });
+      } else if (i === cur) {
+        if (next.length === 0) {
+          indexRef.current = -1;
+          const audio = audioRef.current!;
+          audio.pause();
+          audio.removeAttribute("src");
+          patch({ queue: next, index: -1, current: null, isPlaying: false });
+        } else {
+          patch({ queue: next });
+          playIndex(Math.min(cur, next.length - 1));
+        }
+      } else {
+        patch({ queue: next });
+      }
+      persist();
+    },
+    [patch, persist, playIndex]
+  );
+
   const toggle = useCallback(() => {
     const audio = audioRef.current!;
     if (!state.current) return;
@@ -328,11 +390,25 @@ export function usePlayer() {
     };
   }, []);
 
+  // OS media integration: Windows SMTC (now-playing flyout + media keys) and the
+  // taskbar thumbnail buttons / progress bar. No-ops in a plain browser.
+  useNativeMedia({
+    audioRef,
+    current: state.current,
+    isPlaying: state.isPlaying,
+    position: state.position,
+    duration: state.duration,
+    controls: { toggle, next, prev, seek },
+  });
+
   return {
     state,
     play,
     playAt: playIndex,
     appendQueue,
+    playNext,
+    enqueue,
+    removeFromQueue,
     toggle,
     next,
     prev,

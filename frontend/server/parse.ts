@@ -45,13 +45,20 @@ export function text(node: Any): string | null {
   return null;
 }
 
-const ART = 544;
-/** Upscale Google art URLs to a crisp fixed size. */
+/**
+ * The canonical stored image URL — Google's resize suffix stripped off.
+ *
+ * YT Music thumbnail URLs carry a resize spec (`=w544-h544-l90-rj`,
+ * `=s120-c-k-...`). Those are *derived* variants the image backend generates on
+ * demand, and Google rate-limits that resize path far more aggressively than
+ * the original object — so synthesizing our own size (what this used to do:
+ * forcing everything to `=w544`) is exactly what makes album art sporadically
+ * 429. The bare URL serves the stored original straight from cache and loads
+ * reliably; CSS constrains the display size, so layout is unaffected.
+ */
 export function hiRes(url: string | null): string | null {
   if (!url) return url;
-  return url
-    .replace(/=w\d+-h\d+/, `=w${ART}-h${ART}`)
-    .replace(/=s\d+/, `=s${ART}`);
+  return url.replace(/=(?:w\d+-h\d+|s\d+)(?:-[a-z0-9]+)*$/i, "");
 }
 
 /** Largest thumbnail URL from any node containing a thumbnails[] list. */
@@ -95,6 +102,66 @@ export interface Track {
   // Per-playlist-item id, only present for rows fetched from a playlist. Needed
   // to remove the item (ACTION_REMOVE_VIDEO wants both videoId + setVideoId).
   setVideoId?: string | null;
+  // Context-menu extras, pulled from the row's own menuRenderer (so each row is
+  // self-contained for the right-click actions). channelId/albumBrowseId drive
+  // "show artist"/"show album"; the two feedback tokens toggle library membership
+  // ("In Mediathek speichern" / "Aus Mediathek entfernen"), and inLibrary is the
+  // current membership state read from the toggle's default label.
+  channelId?: string | null;
+  albumBrowseId?: string | null;
+  libraryAddToken?: string | null;
+  libraryRemoveToken?: string | null;
+  inLibrary?: boolean;
+}
+
+// Pull the context-menu extras out of a row's menuRenderer. Works for both row
+// shapes (search/playlist musicResponsiveListItemRenderer and the watch-queue
+// playlistPanelVideoRenderer) since both embed the same menu. Locale-independent
+// where possible: artist/album come from the nav items' browse pageType; the
+// library tokens come from the feedback toggle whose endpoints carry a
+// feedbackToken (the "like" and "listen again" toggles are excluded — like uses
+// likeEndpoint; listen-again's label has no Mediathek/library wording).
+interface MenuExtras {
+  channelId: string | null;
+  albumBrowseId: string | null;
+  libraryAddToken: string | null;
+  libraryRemoveToken: string | null;
+  inLibrary: boolean;
+}
+export function menuExtras(node: Any): MenuExtras {
+  const menu = findOne(node, "menuRenderer");
+  const out: MenuExtras = {
+    channelId: null,
+    albumBrowseId: null,
+    libraryAddToken: null,
+    libraryRemoveToken: null,
+    inLibrary: false,
+  };
+  if (!menu) return out;
+
+  for (const item of findAll(menu, "menuNavigationItemRenderer")) {
+    const be = item?.navigationEndpoint?.browseEndpoint;
+    const pt =
+      be?.browseEndpointContextSupportedConfigs?.browseEndpointContextMusicConfig?.pageType;
+    if (pt === "MUSIC_PAGE_TYPE_ARTIST" && !out.channelId) out.channelId = be.browseId ?? null;
+    else if (pt === "MUSIC_PAGE_TYPE_ALBUM" && !out.albumBrowseId) out.albumBrowseId = be.browseId ?? null;
+  }
+
+  for (const tg of findAll(menu, "toggleMenuServiceItemRenderer")) {
+    const def = text(tg.defaultText) ?? "";
+    const tog = text(tg.toggledText) ?? "";
+    // The library toggle (not "like", not "listen again").
+    if (!/mediathek|library/i.test(def) && !/mediathek|library/i.test(tog)) continue;
+    const defTok = findOne(tg.defaultServiceEndpoint, "feedbackToken");
+    const togTok = findOne(tg.toggledServiceEndpoint, "feedbackToken");
+    // default label "Aus … entfernen" / "Remove from …" ⇒ already in library.
+    const inLib = /entfernen|remove/i.test(def);
+    out.inLibrary = inLib;
+    out.libraryAddToken = inLib ? togTok ?? null : defTok ?? null;
+    out.libraryRemoveToken = inLib ? defTok ?? null : togTok ?? null;
+    break;
+  }
+  return out;
 }
 
 export interface Card {
@@ -164,6 +231,7 @@ export function parseSongRow(r: Any): Track | null {
     durationSeconds: secs,
     thumbnail: thumb(r),
     setVideoId: r.playlistItemData?.playlistSetVideoId ?? null,
+    ...menuExtras(r),
   };
 }
 
@@ -415,6 +483,12 @@ export interface SearchResult {
   thumbnail: string | null;
   duration: string | null;
   explicit: boolean;
+  // Context-menu extras (song rows only) so search has the full right-click menu.
+  channelId?: string | null;
+  albumBrowseId?: string | null;
+  libraryAddToken?: string | null;
+  libraryRemoveToken?: string | null;
+  inLibrary?: boolean;
 }
 
 // Map a browse pageType to our result kind (null ⇒ not a browse target).
@@ -478,7 +552,7 @@ export function parseSearchItems(resp: Any): SearchResult[] {
       const fixed = r.fixedColumns?.[0];
       duration = text(fixed?.musicResponsiveListItemFixedColumnRenderer?.text);
     }
-    out.push({ kind: "song", videoId, title, subtitle, thumbnail: thumb(r), duration, explicit });
+    out.push({ kind: "song", videoId, title, subtitle, thumbnail: thumb(r), duration, explicit, ...menuExtras(r) });
   }
   return out;
 }
@@ -564,6 +638,7 @@ function parsePanelVideo(n: Any): Track | null {
     duration,
     durationSeconds: secs,
     thumbnail: thumb(n),
+    ...menuExtras(n),
   };
 }
 

@@ -1,0 +1,9 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- YouTube Music mark (square, transparent) — used as the browser-tab favicon.
+       Kept in sync with build-resources/icon.svg, which feeds the desktop icon. -->
+  <g transform="translate(51.2 51.2) scale(35.4462)" stroke-width="1">
+    <path d="m13 26c7.176 0 13-5.824 13-13s-5.824-13-13-13-13 5.824-13 13 5.824 13 13 13z" fill="#f03"/>
+    <path d="m20.5 13c0 4.1439-3.3561 7.5-7.5 7.5-4.14386 0-7.5-3.3561-7.5-7.5 0-4.14386 3.35614-7.5 7.5-7.5 4.1439 0 7.5 3.35614 7.5 7.5z" fill="none" stroke="#fff"/>
+    <path d="m17.75 13-7.5-4.25v8.5z" fill="#fff"/>
+  </g>
+</svg>

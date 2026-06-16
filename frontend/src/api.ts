@@ -1,4 +1,5 @@
 import type {
+  Account,
   AlbumPage,
   ArtistCard,
   ArtistPage,
@@ -9,6 +10,7 @@ import type {
   Playlist,
   SearchResult,
   Shelf,
+  StreamInfo,
   Track,
   UpNext,
 } from "./types";
@@ -55,6 +57,17 @@ export function streamUrl(videoId: string): string {
   return `${API_BASE}/stream/${videoId}`;
 }
 
+// "Herunterladen" — a URL that streams the audio with a Content-Disposition so
+// the browser/Electron saves it with a real filename + matching extension.
+export function downloadUrl(videoId: string, name: string): string {
+  return `${API_BASE}/download/${videoId}?name=${encodeURIComponent(name)}`;
+}
+
+// "Statistiken für Interessierte" — technical details of the current stream.
+export async function getPlayerInfo(videoId: string): Promise<StreamInfo> {
+  return json<StreamInfo>(await fetch(`${API_BASE}/player-info/${encodeURIComponent(videoId)}`));
+}
+
 // ---------- Auth (controlled-Chrome login) ----------
 export async function getAuthStatus(): Promise<AuthStatus> {
   return json<AuthStatus>(await fetch(`${API_BASE}/auth/status`));
@@ -68,6 +81,11 @@ export async function startLogin(): Promise<void> {
 
 export async function logout(): Promise<void> {
   await fetch(`${API_BASE}/auth/logout`, { method: "POST" });
+}
+
+// The signed-in account (name / @handle / avatar) for the account indicator.
+export async function getAccount(): Promise<Account> {
+  return json<Account>(await fetch(`${API_BASE}/account`));
 }
 
 export async function getLyrics(videoId: string): Promise<Lyrics> {
@@ -181,6 +199,11 @@ async function post<T = { ok: boolean }>(path: string, body: unknown): Promise<T
 export type Rating = "LIKE" | "DISLIKE" | "INDIFFERENT";
 export async function rate(videoId: string, rating: Rating): Promise<void> {
   await post("/rate", { videoId, rating });
+}
+
+// Toggle library membership via the feedback endpoint (token from the track row).
+export async function feedback(tokens: string[]): Promise<void> {
+  await post("/feedback", { tokens });
 }
 
 // A track's current like state on the account (mirrors YouTube's thumb).

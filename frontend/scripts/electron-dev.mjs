@@ -20,15 +20,18 @@ const DEV_URL = "http://127.0.0.1:5173";
 
 async function buildMain() {
   const { build } = await import("esbuild");
-  await build({
-    entryPoints: [path.join(root, "electron", "main.ts")],
+  const common = {
     bundle: true,
     platform: "node",
     format: "cjs",
     target: "node20",
-    outfile: path.join(root, "build", "electron", "main.cjs"),
     external: ["electron"],
-  });
+  };
+  const buildDir = path.join(root, "build", "electron");
+  await Promise.all([
+    build({ ...common, entryPoints: [path.join(root, "electron", "main.ts")], outfile: path.join(buildDir, "main.cjs") }),
+    build({ ...common, entryPoints: [path.join(root, "electron", "preload.ts")], outfile: path.join(buildDir, "preload.cjs") }),
+  ]);
 }
 
 async function waitForServer(url, timeoutMs = 30_000) {

@@ -28,20 +28,22 @@ async function main() {
   const { build: viteBuild } = await import("vite");
   await viteBuild({ root });
 
-  // 2. Bundle the Electron main process into one CommonJS file.
-  console.log("\n[2/3] esbuild electron main");
+  // 2. Bundle the Electron main process + preload into CommonJS files.
+  console.log("\n[2/3] esbuild electron main + preload");
   const { build: esbuild } = await import("esbuild");
-  await esbuild({
-    entryPoints: [path.join(root, "electron", "main.ts")],
+  const common = {
     bundle: true,
     platform: "node",
     format: "cjs",
     target: "node20",
-    outfile: path.join(buildDir, "main.cjs"),
     external: ["electron"],
     minify: true,
     legalComments: "none",
-  });
+  };
+  await Promise.all([
+    esbuild({ ...common, entryPoints: [path.join(root, "electron", "main.ts")], outfile: path.join(buildDir, "main.cjs") }),
+    esbuild({ ...common, entryPoints: [path.join(root, "electron", "preload.ts")], outfile: path.join(buildDir, "preload.cjs") }),
+  ]);
 
   // 3. Package installers for the host OS, x64 + arm64. Config lives in
   //    package.json "build"; we only pick the targets/arches here.

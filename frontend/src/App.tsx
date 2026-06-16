@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Chip, HomeCard, Playlist, Shelf, Track } from "./types";
+import type { Account, Chip, HomeCard, Playlist, Shelf, Track } from "./types";
 import {
   createPlaylist,
   deletePlaylist,
+  downloadUrl,
+  feedback,
+  getAccount,
+  getAlbum,
+  getArtist,
   getAuthStatus,
   getCategory,
   getExplore,
@@ -17,6 +22,7 @@ import {
   rate,
   removeFromPlaylist,
   renamePlaylist,
+  subscribe,
 } from "./api";
 import { usePlayer } from "./usePlayer";
 import { PlayerBar } from "./PlayerBar";
@@ -29,6 +35,11 @@ import { AlbumView } from "./AlbumView";
 import { LibraryView } from "./LibraryView";
 import { HistoryView } from "./HistoryView";
 import { AddToPlaylistModal } from "./AddToPlaylistModal";
+import { AccountMenu } from "./AccountMenu";
+import { TrackMenu, type MenuCtx } from "./TrackMenu";
+import { CardMenu, type CardMenuCtx } from "./CardMenu";
+import { StatsModal } from "./StatsModal";
+import { QueuePanel } from "./QueuePanel";
 import { LoginModal } from "./LoginModal";
 import {
   IconSearch,
@@ -93,6 +104,8 @@ export default function App() {
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [authed, setAuthed] = useState(false);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [fsMounted, setFsMounted] = useState(false);
@@ -101,6 +114,15 @@ export default function App() {
   const [dislikes, setDislikes] = useState<Set<string>>(new Set());
   const [addTarget, setAddTarget] = useState<string | null>(null); // videoId for add-to-playlist
   const [toast, setToast] = useState<string | null>(null);
+  // Right-click / overflow context menu, the "stats for nerds" overlay, the
+  // up-next queue panel, and per-track library-membership overrides (seeded from
+  // the row's inLibrary at fetch time, flipped optimistically on toggle).
+  const [menu, setMenu] = useState<MenuCtx | null>(null);
+  const [cardMenu, setCardMenu] = useState<CardMenuCtx | null>(null);
+  const [statsTrack, setStatsTrack] = useState<Track | null>(null);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [library, setLibrary] = useState<Record<string, boolean>>({});
+  const [subs, setSubs] = useState<Record<string, boolean>>({}); // card subscribe overrides
 
   useEffect(() => {
     if (fullscreen) setFsMounted(true);
@@ -143,6 +165,17 @@ export default function App() {
     if (authed) void refreshPlaylists();
     else setPlaylists([]);
   }, [authed, refreshPlaylists]);
+
+  // Load the signed-in account (name / @handle / avatar) for the indicator.
+  useEffect(() => {
+    if (!authed) {
+      setAccount(null);
+      return;
+    }
+    getAccount()
+      .then(setAccount)
+      .catch(() => setAccount(null));
+  }, [authed]);
 
   useEffect(() => {
     (async () => {
@@ -424,6 +457,166 @@ export default function App() {
     };
   }, [nowId]);
 
+  // ---- context-menu actions ----
+  const openMenu = useCallback((track: Track, e: React.MouseEvent) => {
+    e.preventDefault();
+    setMenu({ track, x: e.clientX, y: e.clientY });
+  }, []);
+
+  const isInLibrary = useCallback(
+    (t: Track) => library[t.videoId] ?? !!t.inLibrary,
+    [library]
+  );
+
+  // "In Mediathek speichern" / "Aus Mediathek entfernen" via the feedback token.
+  const toggleLibrary = useCallback(
+    (t: Track) => {
+      const currently = isInLibrary(t);
+      const token = currently ? t.libraryRemoveToken : t.libraryAddToken;
+      if (!token) {
+        showToast("Aktion nicht verfügbar");
+        return;
+      }
+      setLibrary((m) => ({ ...m, [t.videoId]: !currently }));
+      feedback([token])
+        .then(() => showToast(currently ? "Aus Mediathek entfernt" : "In Mediathek gespeichert"))
+        .catch((e) => {
+          setLibrary((m) => ({ ...m, [t.videoId]: currently })); // revert
+          showToast(`Fehler: ${e}`);
+        });
+    },
+    [isInLibrary, showToast]
+  );
+
+  // "Teilen" — copy the canonical watch link.
+  const shareTrack = useCallback(
+    (t: Track) => {
+      const url = `https://music.youtube.com/watch?v=${t.videoId}`;
+      navigator.clipboard
+        ?.writeText(url)
+        .then(() => showToast("Link in die Zwischenablage kopiert"))
+        .catch(() => showToast(url));
+    },
+    [showToast]
+  );
+
+  // "Herunterladen" — trigger a browser download of the resolved audio.
+  const downloadTrack = useCallback(
+    (t: Track) => {
+      const name = `${t.artist ? `${t.artist} - ` : ""}${t.title ?? t.videoId}`;
+      const a = document.createElement("a");
+      a.href = downloadUrl(t.videoId, name);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast("Download gestartet …");
+    },
+    [showToast]
+  );
+
+  // ---- card context-menu (home/search/library cards) ----
+  // A video card opens the full track menu; a playlist/album/artist card opens
+  // the kind-specific CardMenu.
+  const openCardMenu = useCallback(
+    (card: HomeCard, e: React.MouseEvent) => {
+      e.preventDefault();
+      if (card.videoId) {
+        setMenu({
+          track: {
+            videoId: card.videoId,
+            title: card.title ?? "",
+            artist: card.subtitle ?? "",
+            album: null,
+            duration: null,
+            durationSeconds: null,
+            thumbnail: card.thumbnail,
+          },
+          x: e.clientX,
+          y: e.clientY,
+        });
+      } else {
+        setCardMenu({ card, x: e.clientX, y: e.clientY });
+      }
+    },
+    []
+  );
+
+  // Fetch the track list backing a playlist/album card (for play/queue actions).
+  const collectionTracks = useCallback(async (card: HomeCard): Promise<Track[]> => {
+    if (card.kind === "album" && card.browseId) return (await getAlbum(card.browseId)).tracks;
+    const id = card.playlistId ?? card.browseId;
+    return id ? (await getPlaylistTracks(id)).results : [];
+  }, []);
+
+  const cardRadio = useCallback(
+    async (card: HomeCard) => {
+      try {
+        if (card.browseId?.startsWith("UC")) {
+          const a = await getArtist(card.browseId);
+          if (a.songs.length) void playRadio(a.songs[0]);
+          else openArtist(card.browseId);
+          return;
+        }
+        const tracks = await collectionTracks(card);
+        if (tracks.length) playTrack(tracks[0], tracks);
+      } catch (e) {
+        showToast(`Fehler: ${e}`);
+      }
+    },
+    [collectionTracks, playRadio, playTrack, showToast]
+  );
+
+  const cardQueue = useCallback(
+    async (card: HomeCard, where: "next" | "end") => {
+      try {
+        const tracks = await collectionTracks(card);
+        if (!tracks.length) return;
+        if (where === "next") player.playNext(tracks);
+        else player.enqueue(tracks);
+        showToast(where === "next" ? "Wird als Nächstes abgespielt" : "Zur Wiedergabeliste hinzugefügt");
+      } catch (e) {
+        showToast(`Fehler: ${e}`);
+      }
+    },
+    [collectionTracks, player, showToast]
+  );
+
+  const cardSubscribed = useCallback(
+    (card: HomeCard) => subs[card.browseId ?? ""] ?? false,
+    [subs]
+  );
+  const toggleCardSubscribe = useCallback(
+    (card: HomeCard) => {
+      const id = card.browseId;
+      if (!id) return;
+      const next = !cardSubscribed(card);
+      setSubs((m) => ({ ...m, [id]: next }));
+      subscribe(id, next)
+        .then(() => showToast(next ? "Abonniert" : "Abo beendet"))
+        .catch((e) => {
+          setSubs((m) => ({ ...m, [id]: !next }));
+          showToast(`Fehler: ${e}`);
+        });
+    },
+    [cardSubscribed, showToast]
+  );
+
+  // "Teilen" for a card — the canonical link for its kind.
+  const shareCard = useCallback(
+    (card: HomeCard) => {
+      let url: string;
+      if (card.browseId?.startsWith("UC")) url = `https://music.youtube.com/channel/${card.browseId}`;
+      else if (card.kind === "album" && card.browseId) url = `https://music.youtube.com/browse/${card.browseId}`;
+      else url = `https://music.youtube.com/playlist?list=${card.playlistId ?? card.browseId ?? ""}`;
+      navigator.clipboard
+        ?.writeText(url)
+        .then(() => showToast("Link in die Zwischenablage kopiert"))
+        .catch(() => showToast(url));
+    },
+    [showToast]
+  );
+
   // ---- playlist mutations (on the open list view) ----
   async function newPlaylist() {
     const name = window.prompt("Name der neuen Playlist:");
@@ -481,6 +674,7 @@ export default function App() {
     if (ok) openLibrary();
   }
   async function onLogout() {
+    setAccountOpen(false);
     await logout();
     await refreshAuth();
     goHome();
@@ -548,11 +742,22 @@ export default function App() {
         <div className="topbar-right">
           <button
             className="avatar"
-            title={authed ? "Abmelden" : "Anmelden"}
-            onClick={authed ? onLogout : () => setShowLogin(true)}
+            title={authed ? account?.name ?? "Konto" : "Anmelden"}
+            onClick={authed ? () => setAccountOpen((o) => !o) : () => setShowLogin(true)}
           >
-            M
+            {authed && account?.photo ? (
+              <img className="avatar-img" src={account.photo} alt="" referrerPolicy="no-referrer" />
+            ) : (
+              (authed ? account?.name?.[0] : null) ?? "M"
+            )}
           </button>
+          {accountOpen && authed && (
+            <AccountMenu
+              account={account}
+              onClose={() => setAccountOpen(false)}
+              onLogout={onLogout}
+            />
+          )}
         </div>
       </header>
 
@@ -614,14 +819,14 @@ export default function App() {
           (shelves.length === 0 && !error ? (
             <div className="status">Wird geladen …</div>
           ) : (
-            <Home shelves={shelves} nowId={nowId} onCard={onCard} onChip={onChip} />
+            <Home shelves={shelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} />
           ))}
 
         {view.kind === "explore" &&
           (exploreShelves.length === 0 && !error ? (
             <div className="status">Wird geladen …</div>
           ) : (
-            <Home shelves={exploreShelves} nowId={nowId} onCard={onCard} onChip={onChip} />
+            <Home shelves={exploreShelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} />
           ))}
 
         {view.kind === "category" && (
@@ -630,7 +835,7 @@ export default function App() {
             {categoryShelves.length === 0 && !error ? (
               <div className="status">Wird geladen …</div>
             ) : (
-              <Home shelves={categoryShelves} nowId={nowId} onCard={onCard} onChip={onChip} />
+              <Home shelves={categoryShelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} />
             )}
           </>
         )}
@@ -644,6 +849,8 @@ export default function App() {
             onOpenAlbum={openAlbum}
             onOpenPlaylist={(id, title) => void openPlaylist(id, title)}
             onAdd={(t) => setAddTarget(t.videoId)}
+            onMenu={openMenu}
+            onCardMenu={openCardMenu}
           />
         )}
 
@@ -654,6 +861,8 @@ export default function App() {
             onPlay={playTrack}
             onCard={onCard}
             onAdd={(t) => setAddTarget(t.videoId)}
+            onMenu={openMenu}
+            onCardMenu={openCardMenu}
           />
         )}
 
@@ -663,6 +872,7 @@ export default function App() {
             nowId={nowId}
             onPlay={playTrack}
             onAdd={(t) => setAddTarget(t.videoId)}
+            onMenu={openMenu}
           />
         )}
 
@@ -676,6 +886,8 @@ export default function App() {
             onAdd={(t) => setAddTarget(t.videoId)}
             onLike={toggleLike}
             likes={likes}
+            onMenu={openMenu}
+            onCardMenu={openCardMenu}
           />
         )}
 
@@ -686,6 +898,7 @@ export default function App() {
             onAdd={(t) => setAddTarget(t.videoId)}
             onLike={toggleLike}
             likes={likes}
+            onMenu={openMenu}
           />
         )}
 
@@ -715,6 +928,7 @@ export default function App() {
                 onLike={toggleLike}
                 likes={likes}
                 onRemove={view.editable ? removeTrack : undefined}
+                onMenu={openMenu}
               />
             )}
           </>
@@ -736,6 +950,12 @@ export default function App() {
         disliked={!!nowId && dislikes.has(nowId)}
         onLike={() => player.state.current && toggleLike(player.state.current)}
         onDislike={() => player.state.current && toggleDislike(player.state.current)}
+        onMenu={(e) =>
+          player.state.current &&
+          setMenu({ track: player.state.current, x: e.clientX, y: e.clientY })
+        }
+        onQueue={() => setQueueOpen((q) => !q)}
+        queueOpen={queueOpen}
       />
 
       {fsMounted && (
@@ -749,6 +969,54 @@ export default function App() {
           onPlay={playTrack}
         />
       )}
+
+      {queueOpen && (
+        <QueuePanel
+          queue={player.state.queue}
+          index={player.state.index}
+          onClose={() => setQueueOpen(false)}
+          onPlayAt={player.playAt}
+          onRemove={player.removeFromQueue}
+          onMenu={setMenu}
+        />
+      )}
+
+      {menu && (
+        <TrackMenu
+          ctx={menu}
+          inLibrary={isInLibrary(menu.track)}
+          liked={likes.has(menu.track.videoId)}
+          onClose={() => setMenu(null)}
+          onRadio={(t) => void playRadio(t)}
+          onPlayNext={player.playNext}
+          onEnqueue={player.enqueue}
+          onToggleLibrary={toggleLibrary}
+          onLike={toggleLike}
+          onAddToPlaylist={(t) => setAddTarget(t.videoId)}
+          onRemoveFromQueue={player.removeFromQueue}
+          onOpenArtist={openArtist}
+          onOpenAlbum={openAlbum}
+          onShare={shareTrack}
+          onDownload={downloadTrack}
+          onStats={(t) => setStatsTrack(t)}
+        />
+      )}
+
+      {cardMenu && (
+        <CardMenu
+          ctx={cardMenu}
+          subscribed={cardSubscribed(cardMenu.card)}
+          onClose={() => setCardMenu(null)}
+          onOpen={onCard}
+          onRadio={(c) => void cardRadio(c)}
+          onPlayNext={(c) => void cardQueue(c, "next")}
+          onEnqueue={(c) => void cardQueue(c, "end")}
+          onSubscribe={toggleCardSubscribe}
+          onShare={shareCard}
+        />
+      )}
+
+      {statsTrack && <StatsModal track={statsTrack} onClose={() => setStatsTrack(null)} />}
 
       {addTarget && (
         <AddToPlaylistModal

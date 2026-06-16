@@ -16,6 +16,7 @@ import {
   IconThumbUp,
   IconThumbDown,
   IconMore,
+  IconQueue,
   IconExpand,
 } from "./icons";
 
@@ -34,6 +35,9 @@ interface Props {
   disliked?: boolean;
   onLike?: () => void;
   onDislike?: () => void;
+  onMenu?: (e: MouseEvent) => void;
+  onQueue?: () => void;
+  queueOpen?: boolean;
 }
 
 function fill(pct: number, color: string): CSSProperties {
@@ -59,6 +63,9 @@ export function PlayerBar({
   disliked,
   onLike,
   onDislike,
+  onMenu,
+  onQueue,
+  queueOpen,
 }: Props) {
   const { current, isPlaying, loading, position, duration, volume, shuffle, repeat } =
     state;
@@ -179,7 +186,12 @@ export function PlayerBar({
           >
             <IconThumbDown size={20} />
           </button>
-          <button className="ctrl ctrl-sm" title="Mehr">
+          <button
+            className="ctrl ctrl-sm"
+            title="Mehr"
+            disabled={!current}
+            onClick={(e) => current && onMenu?.(e)}
+          >
             <IconMore size={22} />
           </button>
         </div>
@@ -220,6 +232,13 @@ export function PlayerBar({
             title="Zufallswiedergabe"
           >
             <IconShuffle size={22} />
+          </button>
+          <button
+            className={`ctrl ctrl-sm ${queueOpen ? "ctrl-on" : ""}`}
+            onClick={onQueue}
+            title="Wiedergabeliste"
+          >
+            <IconQueue size={22} />
           </button>
           <button
             className="ctrl ctrl-sm"

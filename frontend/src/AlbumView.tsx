@@ -9,9 +9,10 @@ interface Props {
   nowId?: string;
   onPlay: (t: Track, queue: Track[]) => void;
   onAdd?: (t: Track) => void;
+  onMenu?: (t: Track, e: React.MouseEvent) => void;
 }
 
-export function AlbumView({ browseId, nowId, onPlay, onAdd }: Props) {
+export function AlbumView({ browseId, nowId, onPlay, onAdd, onMenu }: Props) {
   const [data, setData] = useState<AlbumPage | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -46,7 +47,7 @@ export function AlbumView({ browseId, nowId, onPlay, onAdd }: Props) {
         </div>
       </header>
 
-      <TrackList tracks={data.tracks} nowId={nowId} onPlay={onPlay} onAdd={onAdd} />
+      <TrackList tracks={data.tracks} nowId={nowId} onPlay={onPlay} onAdd={onAdd} onMenu={onMenu} />
     </div>
   );
 }
