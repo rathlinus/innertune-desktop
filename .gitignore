@@ -30,6 +30,10 @@ dist-ssr/
 .vite/
 *.local
 
+# Single-executable build output (scripts/build-exe.mjs)
+/frontend/build/
+/frontend/release/
+
 # ─────────────────────────────────────────────────────────────
 # Python / backend
 # ─────────────────────────────────────────────────────────────

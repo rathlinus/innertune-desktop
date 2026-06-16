@@ -64,7 +64,7 @@ function readBody(req: IncomingMessage): Promise<any> {
   });
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+export async function handle(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
   const url = new URL(req.url || "", "http://localhost");
   const p = url.pathname;
   if (!p.startsWith("/api/")) return false;

@@ -30,13 +30,27 @@ const POLL_INTERVAL_MS = 2000;
 // our "login complete" signal.
 const AUTH_COOKIE = "SAPISID";
 
+// Where Chrome/Chromium typically lives, per OS. `CHROME_PATH` (honoured first)
+// lets the user point at a non-standard install — handy for the packaged Linux
+// binary running on distros that put the browser somewhere unusual.
 const CHROME_CANDIDATES = [
+  process.env.CHROME_PATH || "",
+  // Windows
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
   "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
   path.join(
     process.env.LOCALAPPDATA || "",
     "Google/Chrome/Application/chrome.exe"
   ),
+  // macOS
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+  // Linux
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+  "/snap/bin/chromium",
 ];
 
 export interface Session {
@@ -251,7 +265,10 @@ function toNetscape(cookies: CdpCookie[]): string {
 
 function chromePath(): string {
   const found = CHROME_CANDIDATES.find((p) => p && existsSync(p));
-  if (!found) throw new Error("Could not find chrome.exe in the usual places");
+  if (!found)
+    throw new Error(
+      "Could not find Chrome/Chromium. Install it or set CHROME_PATH."
+    );
   return found;
 }
 
