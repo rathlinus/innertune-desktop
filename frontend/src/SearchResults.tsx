@@ -101,6 +101,7 @@ export function SearchResults({
                   className={`lib-card-art ${i.kind === "artist" ? "lib-card-art-round" : ""}`}
                   src={i.thumbnail}
                   alt=""
+                  loading="lazy"
                 />
               ) : (
                 <div className="lib-card-art lib-card-art-empty" />

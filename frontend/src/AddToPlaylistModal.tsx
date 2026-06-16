@@ -87,7 +87,7 @@ export function AddToPlaylistModal({ videoId, onClose, onDone }: Props) {
                 disabled={busy}
               >
                 {p.thumbnail ? (
-                  <img className="pl-pick-art" src={p.thumbnail} alt="" />
+                  <img className="pl-pick-art" src={p.thumbnail} alt="" loading="lazy" />
                 ) : (
                   <span className="pl-pick-art pl-pick-art-empty" />
                 )}

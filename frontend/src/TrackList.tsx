@@ -26,7 +26,7 @@ export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemov
             onDoubleClick={() => onPlay(t, tracks)}
           >
             <div className="row-art-wrap">
-              {t.thumbnail && <img className="row-art" src={t.thumbnail} alt="" />}
+              {t.thumbnail && <img className="row-art" src={t.thumbnail} alt="" loading="lazy" />}
               <button className="row-play" onClick={() => onPlay(t, tracks)} title="Play">
                 <IconPlay size={20} />
               </button>

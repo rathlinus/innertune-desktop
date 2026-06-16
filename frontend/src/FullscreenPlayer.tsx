@@ -278,7 +278,7 @@ export function FullscreenPlayer({
                 >
                   <div className="fsp-q-art-wrap">
                     {t.thumbnail ? (
-                      <img className="fsp-q-art" src={t.thumbnail} alt="" />
+                      <img className="fsp-q-art" src={t.thumbnail} alt="" loading="lazy" />
                     ) : (
                       <div className="fsp-q-art fsp-q-art-empty">
                         <IconNote size={20} />
@@ -330,7 +330,7 @@ export function FullscreenPlayer({
                   >
                     <div className="fsp-q-art-wrap">
                       {t.thumbnail ? (
-                        <img className="fsp-q-art" src={t.thumbnail} alt="" />
+                        <img className="fsp-q-art" src={t.thumbnail} alt="" loading="lazy" />
                       ) : (
                         <div className="fsp-q-art fsp-q-art-empty">
                           <IconNote size={20} />

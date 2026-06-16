@@ -78,7 +78,7 @@ export function LibraryView(props: Props) {
               onClick={() => onOpenPlaylist(p.playlistId, p.title)}
             >
               {p.thumbnail ? (
-                <img className="lib-card-art" src={p.thumbnail} alt="" />
+                <img className="lib-card-art" src={p.thumbnail} alt="" loading="lazy" />
               ) : (
                 <div className="lib-card-art lib-card-art-empty" />
               )}
@@ -103,7 +103,7 @@ export function LibraryView(props: Props) {
               onClick={() => a.browseId && onOpenAlbum(a.browseId)}
             >
               {a.thumbnail ? (
-                <img className="lib-card-art" src={a.thumbnail} alt="" />
+                <img className="lib-card-art" src={a.thumbnail} alt="" loading="lazy" />
               ) : (
                 <div className="lib-card-art lib-card-art-empty" />
               )}
@@ -120,7 +120,7 @@ export function LibraryView(props: Props) {
           {artists.map((a) => (
             <div key={a.browseId} className="lib-card" onClick={() => onOpenArtist(a.browseId)}>
               {a.thumbnail ? (
-                <img className="lib-card-art lib-card-art-round" src={a.thumbnail} alt="" />
+                <img className="lib-card-art lib-card-art-round" src={a.thumbnail} alt="" loading="lazy" />
               ) : (
                 <div className="lib-card-art lib-card-art-round lib-card-art-empty" />
               )}
