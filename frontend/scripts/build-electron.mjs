@@ -51,7 +51,10 @@ async function main() {
     process.platform === "win32"
       ? Platform.WINDOWS.createTarget(["nsis"], Arch.x64, Arch.arm64)
       : Platform.LINUX.createTarget(["AppImage"], Arch.x64, Arch.arm64);
-  await ebuild({ targets });
+  // Don't let electron-builder publish: the workflow attaches the installers to
+  // the GitHub Release itself. Without this, a git tag triggers electron-builder's
+  // implicit publish, which fails trying to resolve a GitHub publish config.
+  await ebuild({ targets, publish: "never" });
 
   console.log("\nDone -> release/");
 }
