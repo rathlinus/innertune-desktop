@@ -2,13 +2,46 @@
   "name": "frontend",
   "private": true,
   "version": "0.0.0",
+  "description": "A small, self-hosted YouTube Music desktop client.",
+  "author": "rathlinus",
   "type": "module",
+  "main": "build/electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:exe": "node scripts/build-exe.mjs",
+    "build:electron": "node scripts/build-electron.mjs",
+    "electron:dev": "node scripts/electron-dev.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
+  },
+  "build": {
+    "appId": "com.rathlinus.innertune",
+    "productName": "Innertune",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "build/electron/main.cjs",
+      "dist/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo"
+    }
   },
   "dependencies": {
     "react": "^19.2.6",
@@ -20,6 +53,9 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

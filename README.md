@@ -4,9 +4,11 @@
   <p><em>a play on "InnerTube", the name of YouTube's internal API this thing talks to</em></p>
 </div>
 
-A small, self-hosted YouTube Music client. It talks to YouTube's real internal
-API (`youtubei/v1`), the same one the web app uses, instead of going through a
-wrapper library. React front-end with a thin server that runs as Vite middleware.
+A small, self-hosted YouTube Music client that runs as a desktop app
+(Electron). It talks to YouTube's real internal API (`youtubei/v1`), the same one
+the web app uses, instead of going through a wrapper library. React front-end
+with a thin server that runs in the app's main process (and as Vite middleware in
+dev).
 
 ## Disclaimer (read this first)
 
@@ -28,8 +30,11 @@ A few things to be clear about:
 
 ## How it works
 
-The whole thing runs on one Vite dev server. The server code in
-`frontend/server/` launches a controlled Chrome instance to capture a logged-in
+The Electron main process (`frontend/electron/`) starts a tiny localhost HTTP
+server (`frontend/server/`) that serves the built React SPA and routes `/api/*`
+to the same handler the dev server uses, then loads it in a window — so the UI
+and API stay same-origin, exactly as in a browser, just without one. To sign in,
+the server launches a _controlled Chrome instance_ to capture a logged-in
 session, then makes authenticated calls to `youtubei/v1` and parses the raw
 renderer JSON directly. No `ytmusicapi`, `youtubei.js` or `yt-dlp` for metadata.
 
@@ -39,8 +44,12 @@ and isn't fully solved yet.
 
 ## Running it
 
-You need Node and a Chrome install. The captured session lives in
-`frontend/data/` and stays out of git.
+Grab an installer from the [Releases](../../releases) page (Windows `.exe`
+installer or Linux `.AppImage`), or run from source. You need a Chrome install
+for the login capture; the captured session lives in your user-data dir
+(`%APPDATA%/Innertune/data` on Windows) and stays out of git.
+
+From source you need Node:
 
 ```powershell
 cd frontend
@@ -49,7 +58,9 @@ cd ..
 ./start.ps1
 ```
 
-Then open http://127.0.0.1:5173. The API is served under `/api`.
+`start.ps1` starts the Vite dev server and opens the app in an Electron window —
+no browser involved. To build installers yourself: `cd frontend && npm run
+build:electron` (output lands in `frontend/release/`).
 
 ## What works so far
 

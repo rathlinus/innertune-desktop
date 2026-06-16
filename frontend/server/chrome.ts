@@ -17,10 +17,13 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const PROFILE_DIR = path.join(DATA_DIR, "chrome-profile");
-const SESSION_FILE = path.join(DATA_DIR, "session.json");
-const COOKIES_TXT = path.join(DATA_DIR, "cookies.txt");
+// Where captured creds live. YTM_DATA lets the Electron app redirect this to a
+// writable per-user dir (app.getPath("userData")); dev/CLI default to ./data.
+// Resolved lazily so the env var can be set before the first call.
+const dataDir = () => process.env.YTM_DATA || path.join(process.cwd(), "data");
+const profileDir = () => path.join(dataDir(), "chrome-profile");
+const sessionFile = () => path.join(dataDir(), "session.json");
+const cookiesTxt = () => path.join(dataDir(), "cookies.txt");
 
 const DEBUG_PORT = 9222;
 const CAPTURE_TIMEOUT_MS = 5 * 60 * 1000; // 5 min to finish logging in
@@ -79,12 +82,12 @@ let cached: Session | null | undefined;
 export function getSession(): Session | null {
   if (cached === undefined) {
     cached = null;
-    if (existsSync(SESSION_FILE)) {
+    if (existsSync(sessionFile())) {
       // The file may be empty (logout() truncates it to "") or partially
       // written (an interrupted capture). Treat any non-JSON content as
       // "logged out" rather than throwing SyntaxError up through every API call.
       try {
-        const raw = readFileSync(SESSION_FILE, "utf8").trim();
+        const raw = readFileSync(sessionFile(), "utf8").trim();
         if (raw) cached = JSON.parse(raw) as Session;
       } catch {
         cached = null;
@@ -99,12 +102,12 @@ export function isAuthenticated(): boolean {
 }
 
 export function cookiesTxtPath(): string | null {
-  return existsSync(COOKIES_TXT) ? COOKIES_TXT : null;
+  return existsSync(cookiesTxt()) ? cookiesTxt() : null;
 }
 
 export function logout(): void {
   cached = null;
-  for (const f of [SESSION_FILE, COOKIES_TXT]) {
+  for (const f of [sessionFile(), cookiesTxt()]) {
     try {
       if (existsSync(f)) writeFileSync(f, "");
     } catch {
@@ -290,14 +293,14 @@ export function getLoginState(): LoginState {
 export function startLogin(): LoginState {
   if (loginState.status === "waiting") return loginState;
 
-  mkdirSync(PROFILE_DIR, { recursive: true });
+  mkdirSync(profileDir(), { recursive: true });
   loginState = { status: "waiting" };
 
   const proc = spawn(
     chromePath(),
     [
       `--remote-debugging-port=${DEBUG_PORT}`,
-      `--user-data-dir=${PROFILE_DIR}`,
+      `--user-data-dir=${profileDir()}`,
       "--no-first-run",
       "--no-default-browser-check",
       "--new-window",
@@ -339,7 +342,7 @@ async function watchForLogin(): Promise<void> {
 }
 
 async function capture(cookies: CdpCookie[]): Promise<void> {
-  mkdirSync(DATA_DIR, { recursive: true });
+  mkdirSync(dataDir(), { recursive: true });
   const cfg = await getYtcfg();
   const session: Session = {
     cookie: toCookieHeader(cookies),
@@ -349,8 +352,8 @@ async function capture(cookies: CdpCookie[]): Promise<void> {
     context: cfg.context,
     capturedAt: Date.now(),
   };
-  writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
-  writeFileSync(COOKIES_TXT, toNetscape(cookies));
+  writeFileSync(sessionFile(), JSON.stringify(session, null, 2));
+  writeFileSync(cookiesTxt(), toNetscape(cookies));
   cached = session; // invalidate the read-through cache with fresh creds
 }
 

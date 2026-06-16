@@ -1,13 +1,12 @@
 name: Release binaries
 
-# Builds self-contained single-file executables for Windows and Linux, each in
-# x64 and arm64, and attaches them to the GitHub Release. Push a version tag
-# (e.g. `v1.0.0`) to trigger, or run manually from the Actions tab to just build
-# the artifacts.
+# Builds the Electron desktop app for Windows (NSIS installer) and Linux
+# (AppImage), each in x64 and arm64, and attaches the installers to the GitHub
+# Release. Push a version tag (e.g. `v1.0.0`) to trigger, or run manually from
+# the Actions tab to just build the artifacts.
 #
-# Each x64 runner cross-builds its own OS's arm64 binary too (the SEA blob is
-# arch-independent and postject can inject into a downloaded arm64 Node), so no
-# ARM runners are required.
+# Each runner builds its own OS in both arches (electron-builder downloads the
+# matching prebuilt Electron), so no ARM runners are required.
 
 on:
   push:
@@ -39,20 +38,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build executables (x64 + arm64)
-        run: npm run build:exe
+      - name: Build Electron app (x64 + arm64)
+        run: npm run build:electron
         env:
-          TARGET_ARCHES: x64,arm64
+          # electron-builder is happier with a token even for un-published builds.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ runner.os }}
-          path: frontend/release/*
+          name: installers-${{ runner.os }}
+          path: |
+            frontend/release/*.exe
+            frontend/release/*.AppImage
           if-no-files-found: error
 
       - name: Attach to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: frontend/release/*
+          files: |
+            frontend/release/*.exe
+            frontend/release/*.AppImage
