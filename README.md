@@ -10,6 +10,9 @@ the web app uses, instead of going through a wrapper library. React front-end
 with a thin server that runs in the app's main process (and as Vite middleware in
 dev).
 
+<img width="2560" height="1380" alt="grafik" src="https://github.com/user-attachments/assets/dc30e801-14ef-400d-8c2a-6d2d63f981ca" />
+
+
 ## Disclaimer (read this first)
 
 > [!WARNING]
