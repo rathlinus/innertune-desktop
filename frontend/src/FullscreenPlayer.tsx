@@ -3,20 +3,10 @@ import type { TransitionEvent } from "react";
 import { getLyrics, getSimilar } from "./api";
 import type { Lyrics, Track } from "./types";
 import type { PlayerState } from "./usePlayer";
+import type { MenuCtx } from "./TrackMenu";
 import { IconCollapse, IconNote, IconPlay, IconPause } from "./icons";
 import { Spinner } from "./Spinner";
-
-/** Animated now-playing equalizer; bars freeze when paused. */
-function Equalizer({ playing }: { playing: boolean }) {
-  return (
-    <span className={`fsp-eq ${playing ? "is-playing" : ""}`} aria-hidden="true">
-      <span />
-      <span />
-      <span />
-      <span />
-    </span>
-  );
-}
+import { Equalizer } from "./Equalizer";
 
 /** "artist · album", dropping any empty parts. */
 function subtitle(t: Track) {
@@ -31,6 +21,7 @@ interface Props {
   onToggle: () => void;
   onPlayAt: (i: number) => void;
   onPlay: (t: Track, queue: Track[]) => void;
+  onMenu?: (ctx: MenuCtx) => void;
 }
 
 export function FullscreenPlayer({
@@ -41,6 +32,7 @@ export function FullscreenPlayer({
   onToggle,
   onPlayAt,
   onPlay,
+  onMenu,
 }: Props) {
   const { current, isPlaying, loading, queue, index } = state;
 
@@ -275,6 +267,14 @@ export function FullscreenPlayer({
                   className={`fsp-q-item ${i === index ? "playing" : ""} ${isNew ? "fsp-q-enter" : ""}`}
                   style={isNew ? { animationDelay: `${(i - enterFrom) * 45}ms` } : undefined}
                   onClick={() => onPlayAt(i)}
+                  onContextMenu={
+                    onMenu
+                      ? (e) => {
+                          e.preventDefault();
+                          onMenu({ track: t, x: e.clientX, y: e.clientY, queueIndex: i });
+                        }
+                      : undefined
+                  }
                 >
                   <div className="fsp-q-art-wrap">
                     {t.thumbnail ? (
@@ -286,7 +286,7 @@ export function FullscreenPlayer({
                     )}
                     {i === index && (
                       <span className="fsp-q-now">
-                        <Equalizer playing={isPlaying} />
+                        <Equalizer />
                       </span>
                     )}
                   </div>
@@ -327,6 +327,14 @@ export function FullscreenPlayer({
                     key={`${t.videoId}-${i}`}
                     className={`fsp-q-item ${t.videoId === currentId ? "playing" : ""}`}
                     onClick={() => onPlay(t, related)}
+                    onContextMenu={
+                      onMenu
+                        ? (e) => {
+                            e.preventDefault();
+                            onMenu({ track: t, x: e.clientX, y: e.clientY });
+                          }
+                        : undefined
+                    }
                   >
                     <div className="fsp-q-art-wrap">
                       {t.thumbnail ? (
@@ -338,7 +346,7 @@ export function FullscreenPlayer({
                       )}
                       {t.videoId === currentId && (
                         <span className="fsp-q-now">
-                          <Equalizer playing={isPlaying} />
+                          <Equalizer />
                         </span>
                       )}
                     </div>

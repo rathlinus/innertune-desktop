@@ -8,9 +8,9 @@ import {
   IconLibraryAdded,
   IconThumbUp,
   IconDownload,
-  IconAdd,
-  IconTrash,
-  IconPerson,
+  IconPlaylistAdd,
+  IconRemoveCircle,
+  IconArtist,
   IconAlbum,
   IconShare,
   IconStats,
@@ -114,7 +114,7 @@ export function TrackMenu(p: Props) {
         className={`ctx-item ${p.liked ? "ctx-on" : ""}`}
         onClick={run(() => p.onLike(track))}
       >
-        <IconThumbUp size={20} />
+        <IconThumbUp size={20} active={p.liked} />
         <span>
           {p.liked ? "Aus „Titel, die ich mag“ entfernen" : "Zu „Titel, die ich mag“ hinzufügen"}
         </span>
@@ -124,12 +124,12 @@ export function TrackMenu(p: Props) {
         <IconDownload size={20} /> <span>Herunterladen</span>
       </button>
       <button className="ctx-item" onClick={run(() => p.onAddToPlaylist(track))}>
-        <IconAdd size={20} /> <span>Zu Playlist hinzufügen</span>
+        <IconPlaylistAdd size={20} /> <span>Zu Playlist hinzufügen</span>
       </button>
 
       {ctx.queueIndex != null && p.onRemoveFromQueue && (
         <button className="ctx-item" onClick={run(() => p.onRemoveFromQueue!(ctx.queueIndex!))}>
-          <IconTrash size={20} /> <span>Aus Wiedergabeliste entfernen</span>
+          <IconRemoveCircle size={20} /> <span>Aus Wiedergabeliste entfernen</span>
         </button>
       )}
 
@@ -140,7 +140,7 @@ export function TrackMenu(p: Props) {
       )}
       {track.channelId && p.onOpenArtist && (
         <button className="ctx-item" onClick={run(() => p.onOpenArtist!(track.channelId!))}>
-          <IconPerson size={20} /> <span>Künstlerseite anzeigen</span>
+          <IconArtist size={20} /> <span>Künstlerseite anzeigen</span>
         </button>
       )}
 

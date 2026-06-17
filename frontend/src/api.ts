@@ -8,6 +8,7 @@ import type {
   HomeCard,
   Lyrics,
   Playlist,
+  PlaylistPage,
   SearchResult,
   Shelf,
   StreamInfo,
@@ -107,6 +108,11 @@ export async function getPlaylistTracks(
   id: string
 ): Promise<{ title: string; results: Track[] }> {
   return json(await fetch(`${API_BASE}/playlist/${id}`));
+}
+
+// Full playlist detail (rich header + tracks) for the playlist page.
+export async function getPlaylist(id: string): Promise<PlaylistPage> {
+  return json<PlaylistPage>(await fetch(`${API_BASE}/playlist/${id}`));
 }
 
 // ---------- Search suggestions + filtered search ----------

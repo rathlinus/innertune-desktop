@@ -5,7 +5,7 @@ import {
   IconRadio,
   IconPlayNext,
   IconQueue,
-  IconPerson,
+  IconArtist,
   IconShare,
 } from "./icons";
 
@@ -102,7 +102,7 @@ export function CardMenu(p: Props) {
           className={`ctx-item ${p.subscribed ? "ctx-on" : ""}`}
           onClick={run(() => p.onSubscribe(card))}
         >
-          <IconPerson size={20} /> <span>{p.subscribed ? "Abonniert" : "Abonnieren"}</span>
+          <IconArtist size={20} /> <span>{p.subscribed ? "Abonniert" : "Abonnieren"}</span>
         </button>
       )}
       <button className="ctx-item" onClick={run(() => p.onShare(card))}>

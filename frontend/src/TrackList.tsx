@@ -1,5 +1,6 @@
 import type { Track } from "./types";
-import { IconPlay, IconThumbUp, IconAdd, IconTrash, IconMore } from "./icons";
+import { IconPlay, IconThumbUp, IconPlaylistAdd, IconTrash, IconMore } from "./icons";
+import { Equalizer } from "./Equalizer";
 
 interface Props {
   tracks: Track[];
@@ -29,6 +30,11 @@ export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemov
           >
             <div className="row-art-wrap">
               {t.thumbnail && <img className="row-art" src={t.thumbnail} alt="" loading="lazy" />}
+              {active && (
+                <span className="row-eq">
+                  <Equalizer />
+                </span>
+              )}
               <button className="row-play" onClick={() => onPlay(t, tracks)} title="Play">
                 <IconPlay size={20} />
               </button>
@@ -46,12 +52,12 @@ export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemov
                     onClick={() => onLike(t)}
                     title="Mag ich"
                   >
-                    <IconThumbUp size={18} />
+                    <IconThumbUp size={18} active={liked} />
                   </button>
                 )}
                 {onAdd && (
                   <button className="row-act" onClick={() => onAdd(t)} title="Zu Playlist hinzufügen">
-                    <IconAdd size={18} />
+                    <IconPlaylistAdd size={18} />
                   </button>
                 )}
                 {onRemove && (

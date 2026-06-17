@@ -11,13 +11,30 @@
 // In dev, YTM_DEV_SERVER points at the running Vite server (which already hosts
 // the API middleware), so we skip the embedded server and load that instead.
 
-import { app, BrowserWindow, shell, session } from "electron";
+import { app, BrowserWindow, shell, session, ipcMain } from "electron";
 import path from "node:path";
+import os from "node:os";
 import { startServer, type ServeHandle } from "../server/serve";
 import { attachTaskbar } from "./taskbar";
+import { attachTray, type TrayHandle } from "./tray";
+import { loadWindowState, manageWindowState } from "./window-state";
+import { DiscordPresence, type PlaybackInfo } from "./discord";
 
 let serveHandle: ServeHandle | null = null;
 let win: BrowserWindow | null = null;
+let tray: TrayHandle | null = null;
+let discord: DiscordPresence | null = null;
+// Set the moment we genuinely want to exit (tray Quit / OS shutdown), so the
+// window's close handler knows to actually close instead of hiding to tray.
+let isQuitting = false;
+
+// Mica (the Windows 11 translucent window material) only exists on Win11
+// (build >= 22000); on Win10 the flag is ignored, so we don't bother making the
+// chrome translucent there. os.release() is "10.0.<build>".
+function isWindows11(): boolean {
+  if (process.platform !== "win32") return false;
+  return Number(os.release().split(".")[2] ?? 0) >= 22000;
+}
 
 // The built SPA: bundled alongside the app in production, on disk in dev.
 function distDir(): string {
@@ -66,25 +83,80 @@ function spoofImageReferer(): void {
 async function createWindow(): Promise<void> {
   const url = await resolveUrl();
 
+  // Native window-control overlay: a hidden title bar with the OS min/max/close
+  // buttons drawn over our own chrome, so the top bar reads as part of the app
+  // (and Snap Layouts still work). Windows-only — Linux has no overlay, so we
+  // keep its normal frame + system decorations. Mica makes the translucent
+  // chrome tint with the desktop wallpaper (Win11). The renderer learns both
+  // facts from process.argv via the preload (see preload.cjs).
+  const useOverlay = process.platform === "win32";
+  const useMica = isWindows11();
+  const state = loadWindowState();
+
   win = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    x: state.x,
+    y: state.y,
+    width: state.width,
+    height: state.height,
     minWidth: 940,
     minHeight: 600,
-    backgroundColor: "#0f0f0f",
+    // Transparent background lets the Mica material show through; opaque
+    // elsewhere to avoid a load flash.
+    backgroundColor: useMica ? "#00000000" : "#0f0f0f",
+    backgroundMaterial: useMica ? "mica" : "none",
     autoHideMenuBar: true,
     title: "Innertune",
     icon: iconFile(),
+    ...(useOverlay
+      ? {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: { color: "#00000000", symbolColor: "#ffffff", height: 64 },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      additionalArguments: [
+        ...(useOverlay ? ["--ytm-overlay"] : []),
+        ...(useMica ? ["--ytm-mica"] : []),
+      ],
     },
   });
+
+  if (state.maximized) win.maximize();
+  manageWindowState(win);
 
   // Wire the Windows taskbar (thumbnail toolbar buttons + progress bar) to the
   // renderer's playback state. No-op on other platforms.
   attachTaskbar(win);
+
+  // System tray: lets playback keep running with the window "closed", and drives
+  // transport without raising the app. The same control channel as the taskbar.
+  tray = attachTray(win, {
+    iconPath: iconFile(),
+    onControl: (action) => sendControl(action),
+    onQuit: quitApp,
+  });
+
+  // Closing the window hides it to the tray instead of quitting, so music keeps
+  // playing. A real exit goes through quitApp() / before-quit, which sets the
+  // flag below. macOS keeps its own app-stays-running convention.
+  win.on("close", (e) => {
+    if (!isQuitting && process.platform !== "darwin") {
+      e.preventDefault();
+      win?.hide();
+    }
+  });
+
+  // Fan the renderer's playback snapshots out to the tray (now-playing label +
+  // play/pause state) and Discord Rich Presence. The taskbar has its own
+  // listener on the same channel; multiple listeners coexist fine.
+  ipcMain.on("playback:update", (e, snapshot: PlaybackInfo) => {
+    if (!win || e.sender !== win.webContents) return;
+    tray?.update(snapshot);
+    discord?.update(snapshot);
+  });
 
   // Keep in-app navigation in the window; send real external links (e.g. the
   // login flow's "open in browser") to the system browser.
@@ -120,6 +192,14 @@ function sendControl(action: string): void {
   if (win && !win.isDestroyed()) win.webContents.send("playback:control", action);
 }
 
+// A genuine exit (tray "Quit"): flip the flag so the window's close handler
+// stops hiding-to-tray, then quit. before-quit also sets it, covering OS-level
+// shutdown / Cmd-Q.
+function quitApp(): void {
+  isQuitting = true;
+  app.quit();
+}
+
 // Single-instance: a second launch (e.g. clicking the icon again, or a shortcut
 // bound to `--next`) hands its argv to the running instance instead of opening a
 // duplicate window — which would mean two players fighting over playback.
@@ -132,9 +212,11 @@ if (!app.requestSingleInstanceLock()) {
       sendControl(action);
       return;
     }
-    // A plain relaunch: surface the existing window.
+    // A plain relaunch: surface the existing window (it may be hidden in the
+    // tray, so show() as well as restore/focus).
     if (win) {
       if (win.isMinimized()) win.restore();
+      win.show();
       win.focus();
     }
   });
@@ -148,18 +230,33 @@ if (!app.requestSingleInstanceLock()) {
     process.env.YTM_DATA ||= path.join(app.getPath("userData"), "data");
 
     spoofImageReferer();
+
+    // Discord Rich Presence. A no-op unless a client id is configured (see
+    // electron/discord.ts); reconnects quietly if Discord isn't running yet.
+    discord = new DiscordPresence();
+    discord.start();
+
     void createWindow();
 
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+      if (win) {
+        win.show();
+        win.focus();
+      } else if (BrowserWindow.getAllWindows().length === 0) {
+        void createWindow();
+      }
     });
   });
 
+  // With hide-to-tray the window is never the last one closed during normal use,
+  // so this mainly covers a real teardown. Keep playback alive on macOS.
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });
 
   app.on("before-quit", () => {
+    isQuitting = true;
+    discord?.destroy();
     void serveHandle?.close();
   });
 }

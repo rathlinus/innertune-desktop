@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Account, Chip, HomeCard, Playlist, Shelf, Track } from "./types";
 import {
   createPlaylist,
-  deletePlaylist,
   downloadUrl,
   feedback,
   getAccount,
@@ -20,14 +19,11 @@ import {
   logout,
   queueMore,
   rate,
-  removeFromPlaylist,
-  renamePlaylist,
   subscribe,
 } from "./api";
 import { usePlayer } from "./usePlayer";
 import { PlayerBar } from "./PlayerBar";
 import { FullscreenPlayer } from "./FullscreenPlayer";
-import { TrackList } from "./TrackList";
 import { Home } from "./Home";
 import { SearchResults } from "./SearchResults";
 import { ArtistView } from "./ArtistView";
@@ -35,6 +31,7 @@ import { AlbumView } from "./AlbumView";
 import { LibraryView } from "./LibraryView";
 import { HistoryView } from "./HistoryView";
 import { AddToPlaylistModal } from "./AddToPlaylistModal";
+import { PlaylistView } from "./PlaylistView";
 import { AccountMenu } from "./AccountMenu";
 import { TrackMenu, type MenuCtx } from "./TrackMenu";
 import { CardMenu, type CardMenuCtx } from "./CardMenu";
@@ -49,12 +46,23 @@ import {
   IconMenu,
   IconAdd,
   IconHistory,
-  IconTrash,
+  IconRemoveCircle,
 } from "./icons";
 import "./App.css";
 
 const SEARCH_HISTORY_KEY = "ytm.search.history";
 const LIKES_KEY = "ytm.likes.v1";
+
+// Native desktop shell flags (see electron/preload.ts). Undefined in a browser
+// tab, so every field defaults off and the web layout is unaffected.
+const NATIVE = typeof window !== "undefined" ? window.native : undefined;
+const SHELL_CLASS = [
+  NATIVE?.isDesktop ? "desktop" : "",
+  NATIVE?.titleBarOverlay ? "titlebar-overlay" : "",
+  NATIVE?.mica ? "mica" : "",
+]
+  .filter(Boolean)
+  .join(" ");
 
 function loadSet(key: string): Set<string> {
   try {
@@ -79,7 +87,7 @@ type View =
   | { kind: "category"; title: string }
   | { kind: "search" }
   | { kind: "library" }
-  | { kind: "list"; title: string; tracks: Track[]; playlistId?: string; editable?: boolean }
+  | { kind: "list"; title: string; playlistId?: string; editable?: boolean }
   | { kind: "artist"; browseId: string }
   | { kind: "album"; browseId: string }
   | { kind: "history" };
@@ -127,6 +135,15 @@ export default function App() {
   useEffect(() => {
     if (fullscreen) setFsMounted(true);
   }, [fullscreen]);
+
+  // Mica needs a transparent page background so the material shows through the
+  // translucent chrome; scope it to the root element so it only applies in the
+  // Win11 desktop shell (no effect in a browser tab).
+  useEffect(() => {
+    if (!NATIVE?.mica) return;
+    document.documentElement.classList.add("ytm-mica");
+    return () => document.documentElement.classList.remove("ytm-mica");
+  }, []);
 
   useEffect(() => {
     try {
@@ -279,6 +296,10 @@ export default function App() {
 
   // ---- playback ----
   const nowId = player.state.current?.videoId;
+  // Stable player handles (each `usePlayer` return is a fresh object, but these
+  // methods are memoized) used by the auto-skip-disliked logic below.
+  const skipNext = player.next;
+  const wasAutoAdvanced = player.wasAutoAdvanced;
 
   // Play from a finite list (search/album/playlist): the list is the queue, and
   // radio is seeded automatically once it nears its end (watcher below).
@@ -347,19 +368,11 @@ export default function App() {
     setError(null);
     setView({ kind: "album", browseId });
   };
-  const openPlaylist = useCallback(
-    async (id: string, title: string, editable = false) => {
-      setError(null);
-      setView({ kind: "list", title, tracks: [], playlistId: id, editable });
-      try {
-        const data = await getPlaylistTracks(id);
-        setView({ kind: "list", title: data.title || title, tracks: data.results, playlistId: id, editable });
-      } catch (err) {
-        setError(String(err));
-      }
-    },
-    []
-  );
+  // PlaylistView fetches its own header + tracks, so this just switches the view.
+  const openPlaylist = useCallback((id: string, title: string, editable = false) => {
+    setError(null);
+    setView({ kind: "list", title, playlistId: id, editable });
+  }, []);
   function openLibrary() {
     if (!authed) {
       setShowLogin(true);
@@ -423,8 +436,15 @@ export default function App() {
     [applyRate, likes]
   );
   const toggleDislike = useCallback(
-    (t: Track) => applyRate(t.videoId, dislikes.has(t.videoId) ? "INDIFFERENT" : "DISLIKE"),
-    [applyRate, dislikes]
+    (t: Track) => {
+      const nowDisliked = !dislikes.has(t.videoId);
+      applyRate(t.videoId, nowDisliked ? "DISLIKE" : "INDIFFERENT");
+      // Manually disliking the playing track skips it straight away. The skip
+      // lands on an auto-advanced track, so any further disliked songs in a row
+      // are then handled by the effect above.
+      if (nowDisliked && t.videoId === nowId) skipNext();
+    },
+    [applyRate, dislikes, nowId, skipNext]
   );
 
   // Mirror YouTube's real like state for the current song: fetch its rating when
@@ -456,6 +476,15 @@ export default function App() {
       cancelled = true;
     };
   }, [nowId]);
+
+  // Auto-skip disliked songs that come up on their own. Fires when the current
+  // track is flagged disliked — either already in the set or just discovered by
+  // the rating fetch above — but only when it started by auto-advancing (song
+  // ended / forward skip), never when the user deliberately picked it or stepped
+  // back to it. Manual thumbs-down is handled separately in `toggleDislike`.
+  useEffect(() => {
+    if (nowId && dislikes.has(nowId) && wasAutoAdvanced()) skipNext();
+  }, [nowId, dislikes, skipNext, wasAutoAdvanced]);
 
   // ---- context-menu actions ----
   const openMenu = useCallback((track: Track, e: React.MouseEvent) => {
@@ -630,44 +659,6 @@ export default function App() {
       showToast(`Fehler: ${e}`);
     }
   }
-  async function renameCurrent() {
-    if (view.kind !== "list" || !view.playlistId) return;
-    const name = window.prompt("Playlist umbenennen:", view.title);
-    if (!name?.trim() || name.trim() === view.title) return;
-    try {
-      await renamePlaylist(view.playlistId, name.trim());
-      setView({ ...view, title: name.trim() });
-      void refreshPlaylists();
-      showToast("Umbenannt");
-    } catch (e) {
-      showToast(`Fehler: ${e}`);
-    }
-  }
-  async function deleteCurrent() {
-    if (view.kind !== "list" || !view.playlistId) return;
-    if (!window.confirm(`Playlist „${view.title}“ löschen?`)) return;
-    try {
-      await deletePlaylist(view.playlistId);
-      showToast("Playlist gelöscht");
-      void refreshPlaylists();
-      openLibrary();
-    } catch (e) {
-      showToast(`Fehler: ${e}`);
-    }
-  }
-  async function removeTrack(t: Track) {
-    if (view.kind !== "list" || !view.playlistId || !t.setVideoId) return;
-    const prev = view.tracks;
-    setView({ ...view, tracks: prev.filter((x) => x.setVideoId !== t.setVideoId) }); // optimistic
-    try {
-      await removeFromPlaylist(view.playlistId, [{ videoId: t.videoId, setVideoId: t.setVideoId }]);
-      showToast("Aus Playlist entfernt");
-    } catch (e) {
-      setView({ ...view, tracks: prev }); // revert
-      showToast(`Fehler: ${e}`);
-    }
-  }
-
   async function onLoginSuccess() {
     setShowLogin(false);
     const ok = await refreshAuth();
@@ -688,7 +679,11 @@ export default function App() {
   const shownSuggest = suggestions.filter((s) => s.toLowerCase() !== qlc).slice(0, 8);
 
   return (
-    <div className={`app ${collapsed ? "collapsed" : ""}`}>
+    <div
+      className={`app ${collapsed ? "collapsed" : ""} ${SHELL_CLASS} ${
+        player.state.current && !player.state.isPlaying ? "paused" : ""
+      }`}
+    >
       <header className="topbar">
         <div className="topbar-left">
           <button className="icon-btn" onClick={() => setCollapsed((c) => !c)} title="Menü">
@@ -731,7 +726,7 @@ export default function App() {
                       removeFromHistory(h);
                     }}
                   >
-                    <IconTrash size={20} />
+                    <IconRemoveCircle size={20} />
                   </button>
                 </div>
               ))}
@@ -902,36 +897,21 @@ export default function App() {
           />
         )}
 
-        {view.kind === "list" && (
-          <>
-            <div className="list-head">
-              <h1 className="page-title">{view.title}</h1>
-              {view.editable && view.playlistId && (
-                <div className="list-actions">
-                  <button className="btn-outline" onClick={renameCurrent}>
-                    Umbenennen
-                  </button>
-                  <button className="btn-outline" onClick={deleteCurrent}>
-                    Löschen
-                  </button>
-                </div>
-              )}
-            </div>
-            {view.tracks.length === 0 ? (
-              <div className="status">Wird geladen …</div>
-            ) : (
-              <TrackList
-                tracks={view.tracks}
-                nowId={nowId}
-                onPlay={playTrack}
-                onAdd={(t) => setAddTarget(t.videoId)}
-                onLike={toggleLike}
-                likes={likes}
-                onRemove={view.editable ? removeTrack : undefined}
-                onMenu={openMenu}
-              />
-            )}
-          </>
+        {view.kind === "list" && view.playlistId && (
+          <PlaylistView
+            playlistId={view.playlistId}
+            title={view.title}
+            editable={!!view.editable}
+            nowId={nowId}
+            onPlay={playTrack}
+            onMenu={openMenu}
+            onAdd={(t) => setAddTarget(t.videoId)}
+            onLike={toggleLike}
+            likes={likes}
+            onToast={showToast}
+            onChanged={refreshPlaylists}
+            onDeleted={openLibrary}
+          />
         )}
       </main>
 
@@ -967,6 +947,7 @@ export default function App() {
           onToggle={player.toggle}
           onPlayAt={player.playAt}
           onPlay={playTrack}
+          onMenu={setMenu}
         />
       )}
 
@@ -994,8 +975,8 @@ export default function App() {
           onLike={toggleLike}
           onAddToPlaylist={(t) => setAddTarget(t.videoId)}
           onRemoveFromQueue={player.removeFromQueue}
-          onOpenArtist={openArtist}
-          onOpenAlbum={openAlbum}
+          onOpenArtist={(id) => { setFullscreen(false); setQueueOpen(false); openArtist(id); }}
+          onOpenAlbum={(id) => { setFullscreen(false); setQueueOpen(false); openAlbum(id); }}
           onShare={shareTrack}
           onDownload={downloadTrack}
           onStats={(t) => setStatsTrack(t)}

@@ -113,6 +113,17 @@ export interface ArtistPage {
   shelves: Shelf[];
 }
 
+export interface PlaylistPage {
+  title: string | null;
+  owner: string | null;
+  ownerThumbnail: string | null;
+  subtitle: string | null; // "Autom. Playlist • 2026"
+  secondSubtitle: string | null; // "383 Songs • Über 5 Stunden"
+  description: string | null;
+  thumbnail: string | null;
+  results: Track[];
+}
+
 export interface AlbumPage {
   title: string | null;
   artist: string | null;

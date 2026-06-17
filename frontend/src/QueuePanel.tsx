@@ -1,6 +1,6 @@
 import type { Track } from "./types";
 import type { MenuCtx } from "./TrackMenu";
-import { IconClose, IconMore, IconTrash } from "./icons";
+import { IconQueueClose, IconMore, IconRemoveCircle } from "./icons";
 
 // "Wiedergabeliste" — the up-next side panel. Shows the live player queue, lets
 // you jump to a track, remove one, or open its context menu. Closing it just
@@ -20,7 +20,7 @@ export function QueuePanel({ queue, index, onClose, onPlayAt, onRemove, onMenu }
       <div className="queue-head">
         <h2>Wiedergabeliste</h2>
         <button className="icon-btn" onClick={onClose} title="Wiedergabeliste schließen">
-          <IconClose size={22} />
+          <IconQueueClose size={22} />
         </button>
       </div>
       <div className="queue-list">
@@ -41,7 +41,7 @@ export function QueuePanel({ queue, index, onClose, onPlayAt, onRemove, onMenu }
               <div className="queue-artist">{t.artist}</div>
             </div>
             <button className="row-act queue-remove" title="Entfernen" onClick={() => onRemove(i)}>
-              <IconTrash size={18} />
+              <IconRemoveCircle size={18} />
             </button>
             <button
               className="row-act"

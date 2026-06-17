@@ -29,6 +29,14 @@ body,
   overflow: hidden;
 }
 
+/* Win11 Mica shell: the page must be transparent for the material to show
+   through the translucent chrome (toggled by App.tsx; see App.css .app.mica). */
+html.ytm-mica,
+html.ytm-mica body,
+html.ytm-mica #root {
+  background: transparent;
+}
+
 ::-webkit-scrollbar {
   width: 12px;
 }

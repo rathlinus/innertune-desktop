@@ -117,6 +117,15 @@ export function useNativeMedia({ audioRef, current, isPlaying, position, duratio
         }
       }
     }
-    window.native?.updatePlayback({ hasTrack: !!current, isPlaying, position, duration });
+    window.native?.updatePlayback({
+      hasTrack: !!current,
+      isPlaying,
+      position,
+      duration,
+      title: current?.title,
+      artist: current?.artist,
+      album: current?.album ?? undefined,
+      artwork: current?.thumbnail ?? undefined,
+    });
   }, [current, isPlaying, position, duration]);
 }

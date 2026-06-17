@@ -438,12 +438,41 @@ export function parseLibraryPlaylists(resp: Any): PlaylistCard[] {
   return out;
 }
 
-export function parsePlaylist(resp: Any): { title: string | null; results: Track[] } {
-  const header =
+export interface PlaylistPage {
+  title: string | null;
+  owner: string | null; // "Linus Rath" — straplineTextOne, or the facepile byline
+  ownerThumbnail: string | null; // owner avatar
+  subtitle: string | null; // "Autom. Playlist • 2026"
+  secondSubtitle: string | null; // "383 Songs • Über 5 Stunden"
+  description: string | null;
+  thumbnail: string | null; // playlist cover art
+  results: Track[];
+}
+
+// Playlist detail (browse VL…). The rich header (musicResponsiveHeaderRenderer)
+// gives art, title, owner, the "type • year" + "n Songs • duration" subtitles
+// and (sometimes) a description — everything the playlist page needs. Still
+// returns { title, results } too, so existing callers keep working.
+export function parsePlaylist(resp: Any): PlaylistPage {
+  const h =
     findOne(resp, "musicResponsiveHeaderRenderer") ??
-    findOne(resp, "musicDetailHeaderRenderer") ??
-    findOne(resp, "musicEditablePlaylistDetailHeaderRenderer");
-  return { title: text(header?.title), results: parseTracks(resp) };
+    findOne(resp, "musicEditablePlaylistDetailHeaderRenderer") ??
+    findOne(resp, "musicDetailHeaderRenderer");
+  const facepile = findOne(h, "musicFacepileRenderer");
+  const description =
+    text(findOne(resp, "musicDescriptionShelfRenderer")?.description) ??
+    text(h?.description) ??
+    null;
+  return {
+    title: text(h?.title),
+    owner: text(h?.straplineTextOne) ?? text(facepile?.text) ?? null,
+    ownerThumbnail: thumb(h?.straplineThumbnail) ?? thumb(facepile) ?? null,
+    subtitle: text(h?.subtitle),
+    secondSubtitle: text(h?.secondSubtitle),
+    description,
+    thumbnail: thumb(h?.thumbnail),
+    results: parseTracks(resp),
+  };
 }
 
 /** Every musicTwoRowItemRenderer in the tree as a Card (grids/carousels). */

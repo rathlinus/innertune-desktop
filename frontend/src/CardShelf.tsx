@@ -9,6 +9,7 @@ import {
   IconMood,
   IconNewRelease,
 } from "./icons";
+import { Equalizer } from "./Equalizer";
 
 // The icon for an Explore quick-link, by its renderer iconType.
 function ChipIcon({ type }: { type: string | null }) {
@@ -118,6 +119,11 @@ function Card({
     >
       <div className="card-thumb">
         {card.thumbnail && <img src={card.thumbnail} alt="" loading="lazy" />}
+        {active && (
+          <span className="card-eq">
+            <Equalizer />
+          </span>
+        )}
         <button className="card-play" title="Abspielen">
           <IconPlay size={24} />
         </button>

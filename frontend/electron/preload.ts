@@ -21,10 +21,24 @@ interface Playback {
   isPlaying: boolean;
   position: number; // seconds
   duration: number; // seconds
+  // Track metadata, so the main process can label the tray + drive Discord Rich
+  // Presence without a second IPC round-trip.
+  title?: string;
+  artist?: string;
+  album?: string | null;
+  artwork?: string | null;
 }
+
+// main.ts forwards its window-chrome decisions as argv flags (see
+// webPreferences.additionalArguments), so the renderer can mirror them in CSS
+// (drag regions, control insets, Mica translucency) without an IPC call.
+const argv = process.argv;
 
 contextBridge.exposeInMainWorld("native", {
   isDesktop: true,
+  platform: process.platform,
+  titleBarOverlay: argv.includes("--ytm-overlay"),
+  mica: argv.includes("--ytm-mica"),
   updatePlayback: (state: Playback) => ipcRenderer.send("playback:update", state),
   onControl: (cb: (action: NativeControl) => void) => {
     const listener = (_e: IpcRendererEvent, action: NativeControl) => cb(action);

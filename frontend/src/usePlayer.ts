@@ -79,6 +79,11 @@ export function usePlayer() {
   // One-shot: seek the restored track to its saved position once metadata loads.
   const pendingSeekRef = useRef<number | null>(saved?.track ? saved.position : null);
   const lastSaveRef = useRef(0);
+  // Tracks how the *current* track started: true when the player advanced on its
+  // own (a song ended) or via forward-skip, false when the user picked the track
+  // directly (play/playAt) or stepped back (prev). Read by the app to decide
+  // whether a disliked track should be auto-skipped — only auto-advanced ones are.
+  const autoAdvancedRef = useRef(false);
 
   const [state, setState] = useState<PlayerState>({
     current: saved?.track ?? null,
@@ -118,9 +123,10 @@ export function usePlayer() {
   }, []);
 
   const playIndex = useCallback(
-    (i: number) => {
+    (i: number, auto = false) => {
       const queue = queueRef.current;
       if (i < 0 || i >= queue.length) return;
+      autoAdvancedRef.current = auto;
       indexRef.current = i;
       const track = queue[i];
       const audio = audioRef.current!;
@@ -252,8 +258,13 @@ export function usePlayer() {
 
   const next = useCallback(() => {
     const i = nextIndex();
-    if (i >= 0) playIndex(i);
+    if (i >= 0) playIndex(i, true);
   }, [nextIndex, playIndex]);
+
+  // Whether the current track started by auto-advancing (song ended / forward
+  // skip) rather than a deliberate pick or a step-back. Lets the app auto-skip
+  // disliked songs only when they came up on their own.
+  const wasAutoAdvanced = useCallback(() => autoAdvancedRef.current, []);
 
   const toggleShuffle = useCallback(() => {
     shuffleRef.current = !shuffleRef.current;
@@ -347,7 +358,7 @@ export function usePlayer() {
         return;
       }
       const i = nextIndex();
-      if (i >= 0) playIndex(i);
+      if (i >= 0) playIndex(i, true);
     };
     const onError = () => {
       // A track failed to resolve/decode. Don't hang on the spinner.
@@ -412,6 +423,7 @@ export function usePlayer() {
     toggle,
     next,
     prev,
+    wasAutoAdvanced,
     seek,
     getCurrentTime,
     setVolume,

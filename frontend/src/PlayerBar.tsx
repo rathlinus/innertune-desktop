@@ -176,7 +176,7 @@ export function PlayerBar({
             disabled={!current}
             title="Mag ich"
           >
-            <IconThumbUp size={20} />
+            <IconThumbUp size={20} active={liked} />
           </button>
           <button
             className={`ctrl ctrl-sm ${disliked ? "ctrl-on" : ""}`}
@@ -184,7 +184,7 @@ export function PlayerBar({
             disabled={!current}
             title="Mag ich nicht"
           >
-            <IconThumbDown size={20} />
+            <IconThumbDown size={20} active={disliked} />
           </button>
           <button
             className="ctrl ctrl-sm"
@@ -223,7 +223,7 @@ export function PlayerBar({
             {repeat === "one" ? (
               <IconRepeatOne size={22} />
             ) : (
-              <IconRepeat size={22} />
+              <IconRepeat size={22} active={repeat !== "off"} />
             )}
           </button>
           <button
@@ -231,7 +231,7 @@ export function PlayerBar({
             onClick={onShuffle}
             title="Zufallswiedergabe"
           >
-            <IconShuffle size={22} />
+            <IconShuffle size={22} active={shuffle} />
           </button>
           <button
             className={`ctrl ctrl-sm ${queueOpen ? "ctrl-on" : ""}`}

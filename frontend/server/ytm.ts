@@ -9,6 +9,7 @@ import {
   parseLibraryPlaylists,
   parseLibraryArtists,
   parsePlaylist,
+  type PlaylistPage,
   parseCards,
   parseSearchSuggestions,
   parseSearchItems,
@@ -120,9 +121,7 @@ function browseIdFor(playlistId: string): string {
   return playlistId.startsWith("VL") ? playlistId : `VL${playlistId}`;
 }
 
-export async function playlist(
-  id: string
-): Promise<{ title: string | null; results: Track[] }> {
+export async function playlist(id: string): Promise<PlaylistPage> {
   const resp = await callMusic("browse", { browseId: browseIdFor(id) });
   return parsePlaylist(resp);
 }
