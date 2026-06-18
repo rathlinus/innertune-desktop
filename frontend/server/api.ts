@@ -8,18 +8,38 @@ import {
   home,
   explore,
   category,
+  charts,
+  moods,
+  newReleases,
+  tasteProfile,
+  setTasteProfile,
   search,
   searchItems,
   searchSuggestions,
+  searchSuggestionsDetailed,
+  removeSearchSuggestions,
   playlist,
   libraryPlaylists,
   librarySongs,
   libraryAlbums,
   libraryArtists,
+  librarySubscriptions,
+  libraryPodcasts,
+  libraryUploadSongs,
+  libraryUploadAlbums,
+  libraryUploadArtists,
   likedSongs,
   lyrics,
   artist,
+  artistAlbums,
   album,
+  albumBrowseId,
+  user,
+  song,
+  podcast,
+  episode,
+  channel,
+  episodesPlaylist,
   upNext,
   radio,
   queueMore,
@@ -28,13 +48,19 @@ import {
   related,
   history,
   rate,
+  ratePlaylist,
   feedback,
+  addHistoryItem,
+  removeHistoryItems,
+  deleteUploadEntity,
+  uploadSong,
   streamInfo,
   subscribe,
   createPlaylist,
   deletePlaylist,
   addToPlaylist,
   removeFromPlaylist,
+  movePlaylistItem,
   renamePlaylist,
 } from "./ytm";
 import { streamAudio, downloadAudio } from "./stream";
@@ -102,6 +128,22 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
       sendJson(res, 200, { shelves: await explore() });
       return true;
     }
+    if (route === "/charts" && method === "GET") {
+      sendJson(res, 200, { shelves: await charts() });
+      return true;
+    }
+    if (route === "/moods" && method === "GET") {
+      sendJson(res, 200, { shelves: await moods() });
+      return true;
+    }
+    if (route === "/new-releases" && method === "GET") {
+      sendJson(res, 200, { results: await newReleases() });
+      return true;
+    }
+    if (route === "/taste-profile" && method === "GET") {
+      sendJson(res, 200, { artists: await tasteProfile() });
+      return true;
+    }
     if (route === "/category" && method === "GET") {
       const browseId = url.searchParams.get("browseId") || "";
       const params = url.searchParams.get("params") || undefined;
@@ -120,9 +162,13 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
       return true;
     }
     if (route === "/suggest" && method === "GET") {
-      sendJson(res, 200, {
-        suggestions: await searchSuggestions(url.searchParams.get("q") || ""),
-      });
+      const q = url.searchParams.get("q") || "";
+      // detailed=1 → suggestions with removal tokens; default → plain strings.
+      if (url.searchParams.get("detailed")) {
+        sendJson(res, 200, { suggestions: await searchSuggestionsDetailed(q) });
+      } else {
+        sendJson(res, 200, { suggestions: await searchSuggestions(q) });
+      }
       return true;
     }
     if (route.startsWith("/playlist/") && method === "GET") {
@@ -135,9 +181,50 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
       sendJson(res, 200, await artist(id));
       return true;
     }
+    if (route === "/artist-albums" && method === "GET") {
+      const browseId = url.searchParams.get("browseId") || "";
+      const params = url.searchParams.get("params") || undefined;
+      sendJson(res, 200, browseId ? await artistAlbums(browseId, params) : { title: null, cards: [] });
+      return true;
+    }
     if (route.startsWith("/album/") && method === "GET") {
       const id = decodeURIComponent(route.slice("/album/".length));
       sendJson(res, 200, await album(id));
+      return true;
+    }
+    if (route === "/album-browse-id" && method === "GET") {
+      const olak = url.searchParams.get("audioPlaylistId") || "";
+      sendJson(res, 200, { browseId: olak ? await albumBrowseId(olak) : null });
+      return true;
+    }
+    if (route.startsWith("/song/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/song/".length));
+      sendJson(res, 200, await song(id));
+      return true;
+    }
+    if (route.startsWith("/user/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/user/".length));
+      sendJson(res, 200, await user(id));
+      return true;
+    }
+    if (route.startsWith("/channel/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/channel/".length));
+      sendJson(res, 200, await channel(id));
+      return true;
+    }
+    if (route.startsWith("/podcast/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/podcast/".length));
+      sendJson(res, 200, await podcast(id));
+      return true;
+    }
+    if (route.startsWith("/episode/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/episode/".length));
+      sendJson(res, 200, await episode(id));
+      return true;
+    }
+    if (route === "/episodes-playlist" && method === "GET") {
+      const id = url.searchParams.get("playlistId") || "SE";
+      sendJson(res, 200, await episodesPlaylist(id));
       return true;
     }
     if (route.startsWith("/next/") && method === "GET") {
@@ -230,6 +317,26 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
         sendJson(res, 200, { results: await libraryArtists() });
         return true;
       }
+      if (route === "/library/subscriptions") {
+        sendJson(res, 200, { results: await librarySubscriptions() });
+        return true;
+      }
+      if (route === "/library/podcasts") {
+        sendJson(res, 200, { results: await libraryPodcasts() });
+        return true;
+      }
+      if (route === "/library/uploads/songs") {
+        sendJson(res, 200, { results: await libraryUploadSongs() });
+        return true;
+      }
+      if (route === "/library/uploads/albums") {
+        sendJson(res, 200, { results: await libraryUploadAlbums() });
+        return true;
+      }
+      if (route === "/library/uploads/artists") {
+        sendJson(res, 200, { results: await libraryUploadArtists() });
+        return true;
+      }
       if (route === "/history") {
         sendJson(res, 200, { sections: await history() });
         return true;
@@ -241,12 +348,20 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
     // ---- mutations (POST; write to the real account — require a session) ----
     const MUTATIONS = new Set([
       "/rate",
+      "/rate-playlist",
       "/feedback",
       "/subscribe",
+      "/history/add",
+      "/history/remove",
+      "/taste-profile",
+      "/upload",
+      "/upload/delete",
+      "/suggest/remove",
       "/playlist/create",
       "/playlist/delete",
       "/playlist/add",
       "/playlist/remove",
+      "/playlist/move",
       "/playlist/rename",
     ]);
     if (MUTATIONS.has(route) && method === "POST") {
@@ -259,8 +374,31 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
         case "/rate":
           await rate(b.videoId, b.rating);
           break;
+        case "/rate-playlist":
+          await ratePlaylist(b.playlistId, b.rating);
+          break;
         case "/feedback":
           await feedback(b.tokens ?? []);
+          break;
+        case "/history/add":
+          await addHistoryItem(b.videoId);
+          break;
+        case "/history/remove":
+          await removeHistoryItems(b.tokens ?? []);
+          break;
+        case "/taste-profile":
+          await setTasteProfile(b.selections ?? []);
+          break;
+        case "/upload": {
+          const ok = await uploadSong(b.filePath);
+          sendJson(res, 200, { ok });
+          return true;
+        }
+        case "/upload/delete":
+          await deleteUploadEntity(b.entityId);
+          break;
+        case "/suggest/remove":
+          await removeSearchSuggestions(b.tokens ?? []);
           break;
         case "/subscribe":
           await subscribe(b.channelId, !!b.subscribe);
@@ -278,6 +416,9 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
           break;
         case "/playlist/remove":
           await removeFromPlaylist(b.playlistId, b.items ?? []);
+          break;
+        case "/playlist/move":
+          await movePlaylistItem(b.playlistId, b.setVideoId, b.successorSetVideoId);
           break;
         case "/playlist/rename":
           await renamePlaylist(b.playlistId, b.name);

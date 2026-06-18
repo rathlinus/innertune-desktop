@@ -13,6 +13,53 @@ export interface Track {
   libraryAddToken?: string | null; // feedback token: add to library
   libraryRemoveToken?: string | null; // feedback token: remove from library
   inLibrary?: boolean; // current library membership at fetch time
+  entityId?: string | null; // uploaded tracks only — for deleteUploadEntity
+}
+
+// get_song — track metadata from the player.
+export interface SongDetails {
+  videoId: string;
+  title: string | null;
+  author: string | null;
+  channelId: string | null;
+  lengthSeconds: number | null;
+  viewCount: number | null;
+  musicVideoType: string | null;
+  thumbnail: string | null;
+  publishDate: string | null;
+  category: string | null;
+}
+
+// An artist in the onboarding taste profile.
+export interface TasteArtist {
+  name: string | null;
+  selectionValue: string | null;
+  impressionValue: string | null;
+  thumbnail: string | null;
+}
+
+export interface Episode {
+  videoId: string | null;
+  title: string | null;
+  description: string | null;
+  date: string | null;
+  duration: string | null;
+  thumbnail: string | null;
+}
+
+export interface PodcastPage {
+  title: string | null;
+  author: string | null;
+  description: string | null;
+  thumbnail: string | null;
+  episodes: Episode[];
+}
+
+// A search suggestion with its (optional) history-removal token.
+export interface SearchSuggestion {
+  query: string;
+  fromHistory: boolean;
+  removeToken: string | null;
 }
 
 // "Statistiken für Interessierte" — technical details of the audio stream.
@@ -83,6 +130,15 @@ export interface Shelf {
   title: string;
   cards: HomeCard[];
   chips?: Chip[];
+  // The shelf header's "more" target — fetch the full grid via getArtistAlbums.
+  moreBrowseId?: string | null;
+  moreParams?: string | null;
+}
+
+// A plain grid of cards (an artist's full albums/singles list).
+export interface GridPage {
+  title: string | null;
+  cards: HomeCard[];
 }
 
 export interface SearchResult {

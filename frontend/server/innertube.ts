@@ -122,6 +122,154 @@ export async function callMusic<T = any>(
   return (await res.json()) as T;
 }
 
+// get_song — track metadata from the WEB_REMIX player. We only read
+// videoDetails + microformat here (no streaming formats), so the authed
+// WEB_REMIX player is fine even though its audio formats are ciphered (audio
+// itself still comes from the separate ANDROID_VR path in resolveAudio).
+export interface SongDetails {
+  videoId: string;
+  title: string | null;
+  author: string | null;
+  channelId: string | null;
+  lengthSeconds: number | null;
+  viewCount: number | null;
+  musicVideoType: string | null;
+  thumbnail: string | null;
+  publishDate: string | null;
+  category: string | null;
+}
+
+export async function songDetails(videoId: string): Promise<SongDetails> {
+  const pr = await callMusic<any>("player", {
+    videoId,
+    playbackContext: { contentPlaybackContext: { html5Preference: "HTML5_PREF_WANTS" } },
+    contentCheckOk: true,
+    racyCheckOk: true,
+  });
+  const vd = pr?.videoDetails ?? {};
+  const mf = pr?.microformat?.microformatDataRenderer ?? pr?.microformat?.playerMicroformatRenderer ?? {};
+  const thumbs: any[] = vd?.thumbnail?.thumbnails ?? [];
+  return {
+    videoId: vd.videoId ?? videoId,
+    title: vd.title ?? null,
+    author: vd.author ?? null,
+    channelId: vd.channelId ?? null,
+    lengthSeconds: vd.lengthSeconds ? Number(vd.lengthSeconds) : null,
+    viewCount: vd.viewCount ? Number(vd.viewCount) : null,
+    musicVideoType: vd.musicVideoType ?? null,
+    thumbnail: thumbs.length ? thumbs[thumbs.length - 1].url : null,
+    publishDate: mf.publishDate ?? mf.uploadDate ?? null,
+    category: mf.category ?? null,
+  };
+}
+
+// add_history_item — record a play in the account's watch history by pinging the
+// track's videostats playback URL (exactly what the web client does on play).
+// Needs the WEB_REMIX player (cookies) to get a tracking URL bound to the
+// account; the ping itself is a cookie'd GET with a random client-play-nonce.
+const CPN_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+function makeCpn(): string {
+  let s = "";
+  for (let i = 0; i < 16; i++) s += CPN_CHARS[Math.floor(Math.random() * 64)];
+  return s;
+}
+
+export async function addHistoryItem(videoId: string): Promise<void> {
+  const s = getSession();
+  if (!s) throw new NotAuthedError();
+  const pr = await callMusic<any>("player", {
+    videoId,
+    playbackContext: { contentPlaybackContext: { html5Preference: "HTML5_PREF_WANTS" } },
+    contentCheckOk: true,
+    racyCheckOk: true,
+  });
+  const base: string | undefined = pr?.playbackTracking?.videostatsPlaybackUrl?.baseUrl;
+  if (!base) throw new Error("no playback tracking url");
+  const url = new URL(base);
+  url.searchParams.set("ver", "2");
+  url.searchParams.set("c", "WEB_REMIX");
+  url.searchParams.set("cpn", makeCpn());
+  const res = await fetch(url.toString(), {
+    headers: {
+      Cookie: s.cookie,
+      Origin: MUSIC_ORIGIN,
+      Referer: `${MUSIC_ORIGIN}/`,
+      "X-Goog-AuthUser": "0",
+      ...(s.visitor_data ? { "X-Goog-Visitor-Id": s.visitor_data } : {}),
+      "User-Agent": WEB_UA,
+    },
+  });
+  if (!res.ok) throw new Error(`history ping ${res.status}`);
+}
+
+// get_album_browse_id — resolve an album's audioPlaylistId (OLAK5uy_…) to its
+// album browseId (MPREb_…). The album page itself isn't reachable from the
+// OLAK id via the API, but the web playlist page embeds the browseId; we fetch
+// it (cookie'd) and pull the MPREb_ id straight out of the HTML.
+export async function resolveAlbumBrowseId(audioPlaylistId: string): Promise<string | null> {
+  const s = getSession();
+  const res = await fetch(`${MUSIC_ORIGIN}/playlist?list=${encodeURIComponent(audioPlaylistId)}`, {
+    headers: {
+      ...(s?.cookie ? { Cookie: s.cookie } : {}),
+      ...(s?.visitor_data ? { "X-Goog-Visitor-Id": s.visitor_data } : {}),
+      "Accept-Language": "de",
+      "User-Agent": WEB_UA,
+    },
+  });
+  if (!res.ok) return null;
+  const html = await res.text();
+  return html.match(/MPREb_[A-Za-z0-9_-]+/)?.[0] ?? null;
+}
+
+// upload_song — upload a local audio file to the account's private library via
+// YouTube's resumable upload server. Two steps: (1) ask for an upload URL,
+// (2) PUT the bytes and finalize. Writes to the real account.
+//
+// NOTE: implemented to the documented flow but NOT verified against the live
+// service here (no throwaway path for uploads). Treat as best-effort.
+export async function uploadSong(filePath: string): Promise<boolean> {
+  const s = getSession();
+  if (!s) throw new NotAuthedError();
+  const { readFile } = await import("node:fs/promises");
+  const { basename } = await import("node:path");
+  const data = await readFile(filePath);
+  const headers = {
+    Cookie: s.cookie,
+    Authorization: sapisidAuth(s.cookie) ?? "",
+    Origin: MUSIC_ORIGIN,
+    "X-Origin": MUSIC_ORIGIN,
+    Referer: `${MUSIC_ORIGIN}/`,
+    "X-Goog-AuthUser": "0",
+    "User-Agent": WEB_UA,
+  };
+
+  // Step 1: request the resumable upload session.
+  const start = await fetch("https://upload.youtube.com/upload/usermusic/http?authuser=0", {
+    method: "POST",
+    headers: {
+      ...headers,
+      "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(data.byteLength),
+      "X-Goog-Upload-Protocol": "resumable",
+    },
+    body: basename(filePath),
+  });
+  const uploadUrl = start.headers.get("X-Goog-Upload-URL");
+  if (!uploadUrl) throw new Error(`upload start failed ${start.status}`);
+
+  // Step 2: send the bytes and finalize.
+  const done = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      ...headers,
+      "X-Goog-Upload-Command": "upload, finalize",
+      "X-Goog-Upload-Offset": "0",
+    },
+    body: data,
+  });
+  return done.status === 200;
+}
+
 // ANDROID_VR player call — returns direct, descramble-free stream URLs (no
 // signatureCipher, no `n` throttle, no po_token), so we never need a JS
 // challenge solver or yt-dlp for audio.

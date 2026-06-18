@@ -4,14 +4,20 @@ import type {
   ArtistCard,
   ArtistPage,
   AuthStatus,
+  Episode,
+  GridPage,
   HistorySection,
   HomeCard,
   Lyrics,
   Playlist,
   PlaylistPage,
+  PodcastPage,
   SearchResult,
+  SearchSuggestion,
   Shelf,
+  SongDetails,
   StreamInfo,
+  TasteArtist,
   Track,
   UpNext,
 } from "./types";
@@ -45,6 +51,41 @@ export async function getCategory(browseId: string, params?: string | null): Pro
   const qs = new URLSearchParams({ browseId });
   if (params) qs.set("params", params);
   return (await json<{ shelves: Shelf[] }>(await fetch(`${API_BASE}/category?${qs}`))).shelves;
+}
+
+// Charts (top songs + top artists/videos carousels).
+export async function getCharts(): Promise<Shelf[]> {
+  return (await json<{ shelves: Shelf[] }>(await fetch(`${API_BASE}/charts`))).shelves;
+}
+
+// "Stimmung & Genre" — mood/genre category chips (each opens getCategory).
+export async function getMoods(): Promise<Shelf[]> {
+  return (await json<{ shelves: Shelf[] }>(await fetch(`${API_BASE}/moods`))).shelves;
+}
+
+// New album & single releases (a flat grid of cards).
+export async function getNewReleases(): Promise<HomeCard[]> {
+  return (await json<{ results: HomeCard[] }>(await fetch(`${API_BASE}/new-releases`))).results;
+}
+
+// The onboarding "pick artists" taste profile.
+export async function getTasteProfile(): Promise<TasteArtist[]> {
+  return (await json<{ artists: TasteArtist[] }>(await fetch(`${API_BASE}/taste-profile`))).artists;
+}
+
+// Seed recommendations with chosen taste-profile artists.
+export async function setTasteProfile(
+  selections: { selectionValue: string; impressionValue: string }[]
+): Promise<void> {
+  await post("/taste-profile", { selections });
+}
+
+// The full grid behind a shelf's "more" link (Shelf.moreBrowseId/moreParams) —
+// e.g. an artist's complete albums or singles list.
+export async function getArtistAlbums(browseId: string, params?: string | null): Promise<GridPage> {
+  const qs = new URLSearchParams({ browseId });
+  if (params) qs.set("params", params);
+  return json<GridPage>(await fetch(`${API_BASE}/artist-albums?${qs}`));
 }
 
 export async function searchTracks(query: string): Promise<Track[]> {
@@ -125,6 +166,21 @@ export async function getSuggestions(q: string): Promise<string[]> {
   ).suggestions;
 }
 
+// Suggestions with history-removal tokens (for the X on a history suggestion).
+export async function getSuggestionsDetailed(q: string): Promise<SearchSuggestion[]> {
+  if (!q.trim()) return [];
+  return (
+    await json<{ suggestions: SearchSuggestion[] }>(
+      await fetch(`${API_BASE}/suggest?detailed=1&q=${encodeURIComponent(q)}`)
+    )
+  ).suggestions;
+}
+
+// Delete personal-history search suggestions (tokens from getSuggestionsDetailed).
+export async function removeSearchSuggestions(tokens: string[]): Promise<void> {
+  await post("/suggest/remove", { tokens });
+}
+
 // filter: "songs" | "videos" | "albums" | "artists" | "playlists"
 export async function searchItems(q: string, filter: string): Promise<SearchResult[]> {
   return (
@@ -141,6 +197,46 @@ export async function getArtist(browseId: string): Promise<ArtistPage> {
 
 export async function getAlbum(browseId: string): Promise<AlbumPage> {
   return json<AlbumPage>(await fetch(`${API_BASE}/album/${encodeURIComponent(browseId)}`));
+}
+
+// Resolve an album's audioPlaylistId (OLAK5uy_…) to its album browseId (MPREb_…).
+export async function getAlbumBrowseId(audioPlaylistId: string): Promise<string | null> {
+  return (
+    await json<{ browseId: string | null }>(
+      await fetch(`${API_BASE}/album-browse-id?audioPlaylistId=${encodeURIComponent(audioPlaylistId)}`)
+    )
+  ).browseId;
+}
+
+// get_song — track metadata (title/author/length/views/publish date).
+export async function getSong(videoId: string): Promise<SongDetails> {
+  return json<SongDetails>(await fetch(`${API_BASE}/song/${encodeURIComponent(videoId)}`));
+}
+
+// A user/channel page (non-artist uploader) — same shape as an artist page.
+export async function getUser(channelId: string): Promise<ArtistPage> {
+  return json<ArtistPage>(await fetch(`${API_BASE}/user/${encodeURIComponent(channelId)}`));
+}
+
+// A (podcast) channel page — same shape as an artist page.
+export async function getChannel(browseId: string): Promise<ArtistPage> {
+  return json<ArtistPage>(await fetch(`${API_BASE}/channel/${encodeURIComponent(browseId)}`));
+}
+
+// ---------- Podcasts / episodes ----------
+export async function getPodcast(browseId: string): Promise<PodcastPage> {
+  return json<PodcastPage>(await fetch(`${API_BASE}/podcast/${encodeURIComponent(browseId)}`));
+}
+
+export async function getEpisode(browseId: string): Promise<Episode> {
+  return json<Episode>(await fetch(`${API_BASE}/episode/${encodeURIComponent(browseId)}`));
+}
+
+// The "Gespeicherte Folgen" saved-episodes playlist (default id "SE").
+export async function getEpisodesPlaylist(playlistId = "SE"): Promise<PlaylistPage> {
+  return json<PlaylistPage>(
+    await fetch(`${API_BASE}/episodes-playlist?playlistId=${encodeURIComponent(playlistId)}`)
+  );
 }
 
 // ---------- Up-next queue / radio / related ----------
@@ -191,6 +287,32 @@ export async function getLibraryArtists(): Promise<ArtistCard[]> {
     .results;
 }
 
+// Subscribed artists ("Abos").
+export async function getLibrarySubscriptions(): Promise<ArtistCard[]> {
+  return (await json<{ results: ArtistCard[] }>(await fetch(`${API_BASE}/library/subscriptions`)))
+    .results;
+}
+
+// Saved podcasts in the library.
+export async function getLibraryPodcasts(): Promise<HomeCard[]> {
+  return (await json<{ results: HomeCard[] }>(await fetch(`${API_BASE}/library/podcasts`))).results;
+}
+
+// Uploaded ("privately owned") library content.
+export async function getLibraryUploadSongs(): Promise<Track[]> {
+  return (await json<{ results: Track[] }>(await fetch(`${API_BASE}/library/uploads/songs`))).results;
+}
+
+export async function getLibraryUploadAlbums(): Promise<HomeCard[]> {
+  return (await json<{ results: HomeCard[] }>(await fetch(`${API_BASE}/library/uploads/albums`)))
+    .results;
+}
+
+export async function getLibraryUploadArtists(): Promise<ArtistCard[]> {
+  return (await json<{ results: ArtistCard[] }>(await fetch(`${API_BASE}/library/uploads/artists`)))
+    .results;
+}
+
 // ---------- Mutations (write to the real account) ----------
 async function post<T = { ok: boolean }>(path: string, body: unknown): Promise<T> {
   return json<T>(
@@ -205,6 +327,31 @@ async function post<T = { ok: boolean }>(path: string, body: unknown): Promise<T
 export type Rating = "LIKE" | "DISLIKE" | "INDIFFERENT";
 export async function rate(videoId: string, rating: Rating): Promise<void> {
   await post("/rate", { videoId, rating });
+}
+
+// Like/dislike/clear a playlist or album (for others' playlists — not your own).
+export async function ratePlaylist(playlistId: string, rating: Rating): Promise<void> {
+  await post("/rate-playlist", { playlistId, rating });
+}
+
+// Record a play in the watch history (scrobble).
+export async function addHistoryItem(videoId: string): Promise<void> {
+  await post("/history/add", { videoId });
+}
+
+// Remove items from the watch history (tokens from history rows' menu).
+export async function removeHistoryItems(tokens: string[]): Promise<void> {
+  await post("/history/remove", { tokens });
+}
+
+// Delete an uploaded track/album from the library (entityId from upload rows).
+export async function deleteUploadEntity(entityId: string): Promise<void> {
+  await post("/upload/delete", { entityId });
+}
+
+// Upload a local audio file (server-side path) to the private library.
+export async function uploadSong(filePath: string): Promise<boolean> {
+  return (await post<{ ok: boolean }>("/upload", { filePath })).ok;
 }
 
 // Toggle library membership via the feedback endpoint (token from the track row).
@@ -251,4 +398,15 @@ export async function removeFromPlaylist(
 
 export async function renamePlaylist(playlistId: string, name: string): Promise<void> {
   await post("/playlist/rename", { playlistId, name });
+}
+
+// Reorder a playlist item: place `setVideoId` directly before
+// `successorSetVideoId` (both are per-item setVideoIds). Omit the successor to
+// move the item to the end.
+export async function movePlaylistItem(
+  playlistId: string,
+  setVideoId: string,
+  successorSetVideoId?: string | null
+): Promise<void> {
+  await post("/playlist/move", { playlistId, setVideoId, successorSetVideoId });
 }

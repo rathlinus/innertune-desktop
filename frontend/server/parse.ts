@@ -112,6 +112,9 @@ export interface Track {
   libraryAddToken?: string | null;
   libraryRemoveToken?: string | null;
   inLibrary?: boolean;
+  // Privately-owned (uploaded) tracks carry an entityId used to delete them
+  // (music/delete_privately_owned_entity). Only present on upload rows.
+  entityId?: string | null;
 }
 
 // Pull the context-menu extras out of a row's menuRenderer. Works for both row
@@ -127,6 +130,7 @@ interface MenuExtras {
   libraryAddToken: string | null;
   libraryRemoveToken: string | null;
   inLibrary: boolean;
+  entityId: string | null;
 }
 export function menuExtras(node: Any): MenuExtras {
   const menu = findOne(node, "menuRenderer");
@@ -136,6 +140,7 @@ export function menuExtras(node: Any): MenuExtras {
     libraryAddToken: null,
     libraryRemoveToken: null,
     inLibrary: false,
+    entityId: findOne(node, "entityId") ?? null,
   };
   if (!menu) return out;
 
@@ -298,6 +303,11 @@ export interface Shelf {
   title: string | null;
   cards: Card[];
   chips?: Chip[]; // present instead of cards for nav-button shelves
+  // The shelf header's "more" target (browse the full list — e.g. an artist's
+  // complete albums/singles grid, or a home shelf's dedicated page). Drives a
+  // "Mehr anzeigen" link; fetch via ytm.artistAlbums / category.
+  moreBrowseId?: string | null;
+  moreParams?: string | null;
 }
 
 // uint32 ARGB (e.g. 4294961024) -> "#rrggbb".
@@ -346,6 +356,14 @@ function shelfTitle(shelf: Any): string | null {
       shelf?.title ??
       findOne(shelf?.header, "title")
   );
+}
+
+// The shelf header's "more" target (the carousel "Mehr anzeigen" arrow, or the
+// header title link) — a browseEndpoint scoped to the header only, so card
+// browseEndpoints inside the shelf body aren't mistaken for it.
+function shelfMore(shelf: Any): { browseId: string; params: string | null } | null {
+  const be = findOne(shelf?.header, "browseEndpoint");
+  return be?.browseId ? { browseId: be.browseId, params: be.params ?? null } : null;
 }
 
 // Every card in a shelf subtree: two-row card items plus song rows.
@@ -405,7 +423,8 @@ export function parseHome(resp: Any, limit = 12): Shelf[] {
     const key = `${title ?? ""}|${cards[0].videoId ?? cards[0].browseId ?? cards[0].playlistId ?? ""}`;
     if (seen.has(key)) continue; // de-dupe if a shelf appears in both list + continuation
     seen.add(key);
-    shelves.push({ title, cards });
+    const more = shelfMore(shelf);
+    shelves.push({ title, cards, moreBrowseId: more?.browseId ?? null, moreParams: more?.params ?? null });
     if (shelves.length >= limit) break;
   }
   return shelves;
@@ -775,6 +794,24 @@ export interface ArtistCard {
   thumbnail: string | null;
 }
 
+// ---- grid page (artist's full albums/singles, browse browseId+params) -------
+
+export interface GridPage {
+  title: string | null; // the grid header, e.g. "Alben" / "Singles"
+  cards: Card[];
+}
+
+// A plain grid of cards behind a shelf's "more" link. Reuses parseCards; the
+// title comes from the grid/musicHeader title.
+export function parseGrid(resp: Any): GridPage {
+  const title = text(
+    findOne(resp, "gridHeaderRenderer")?.title ??
+      findOne(resp, "musicHeaderRenderer")?.title ??
+      findOne(resp, "header")?.title
+  );
+  return { title, cards: parseCards(resp) };
+}
+
 export function parseLibraryArtists(resp: Any): ArtistCard[] {
   const out: ArtistCard[] = [];
   const seen = new Set<string>();
@@ -793,6 +830,128 @@ export function parseLibraryArtists(resp: Any): ArtistCard[] {
       subtitle: text(flexText(cols[1])),
       thumbnail: thumb(r),
     });
+  }
+  return out;
+}
+
+// ---- taste profile (browse FEmusic_tastebuilder) ----------------------------
+
+// The onboarding "pick artists you like" grid. Each tastebuilderItemRenderer
+// carries the artist name plus the opaque selection/impression values that
+// set_tasteprofile sends back. (Field names per the live renderer.)
+export interface TasteArtist {
+  name: string | null;
+  selectionValue: string | null;
+  impressionValue: string | null;
+  thumbnail: string | null;
+}
+
+export function parseTasteProfile(resp: Any): TasteArtist[] {
+  const out: TasteArtist[] = [];
+  const seen = new Set<string>();
+  for (const it of findAll(resp, "tastebuilderItemRenderer")) {
+    const name = text(it?.title);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push({
+      name,
+      selectionValue: it?.selectionFormValue ?? null,
+      impressionValue: it?.impressionValue ?? null,
+      thumbnail: thumb(it),
+    });
+  }
+  return out;
+}
+
+// ---- podcast / episode (browse) ---------------------------------------------
+//
+// Best-effort parsers: the dev account has no subscribed podcasts to capture, so
+// these follow the documented WEB_REMIX podcast shapes (musicResponsiveHeader +
+// musicMultiRowListItemRenderer episode rows) and lean on deep-find so they
+// degrade gracefully rather than crash.
+
+export interface Episode {
+  videoId: string | null;
+  title: string | null;
+  description: string | null;
+  date: string | null;
+  duration: string | null;
+  thumbnail: string | null;
+}
+
+function parseEpisodeRow(n: Any): Episode {
+  const onTap = n?.onTap ?? n?.navigationEndpoint ?? n;
+  return {
+    videoId: findOne(onTap, "videoId") ?? n?.videoId ?? null,
+    title: text(n?.title),
+    description: text(n?.description) ?? text(findOne(n, "musicMultilineTextRenderer")),
+    date: text(n?.subtitle),
+    duration: text(findOne(n, "lengthText")),
+    thumbnail: thumb(n),
+  };
+}
+
+export interface PodcastPage {
+  title: string | null;
+  author: string | null;
+  description: string | null;
+  thumbnail: string | null;
+  episodes: Episode[];
+}
+
+export function parsePodcast(resp: Any): PodcastPage {
+  const h =
+    findOne(resp, "musicResponsiveHeaderRenderer") ??
+    findOne(resp, "musicDetailHeaderRenderer");
+  return {
+    title: text(h?.title),
+    author: text(h?.straplineTextOne) ?? text(h?.subtitle),
+    description:
+      text(findOne(resp, "musicDescriptionShelfRenderer")?.description) ??
+      text(h?.description),
+    thumbnail: thumb(h),
+    episodes: findAll(resp, "musicMultiRowListItemRenderer").map(parseEpisodeRow),
+  };
+}
+
+// A single episode page → its (one) episode detail plus the host podcast title.
+export function parseEpisode(resp: Any): Episode {
+  const row = findAll(resp, "musicMultiRowListItemRenderer")[0];
+  if (row) return parseEpisodeRow(row);
+  const h =
+    findOne(resp, "musicResponsiveHeaderRenderer") ??
+    findOne(resp, "musicDetailHeaderRenderer");
+  return {
+    videoId: findOne(resp, "videoId") ?? null,
+    title: text(h?.title),
+    description:
+      text(findOne(resp, "musicDescriptionShelfRenderer")?.description) ??
+      text(h?.description),
+    date: text(h?.subtitle),
+    duration: null,
+    thumbnail: thumb(h),
+  };
+}
+
+// ---- detailed search suggestions (with removable-history tokens) ------------
+
+// Like parseSearchSuggestions but also surfaces the feedbackToken that
+// remove_search_suggestions needs to delete a personal-history suggestion.
+export interface SearchSuggestion {
+  query: string;
+  fromHistory: boolean;
+  removeToken: string | null;
+}
+
+export function parseSearchSuggestionsDetailed(resp: Any): SearchSuggestion[] {
+  const out: SearchSuggestion[] = [];
+  const seen = new Set<string>();
+  for (const s of findAll(resp, "searchSuggestionRenderer")) {
+    const q = s?.navigationEndpoint?.searchEndpoint?.query ?? text(s?.suggestion);
+    if (!q || seen.has(q)) continue;
+    seen.add(q);
+    const removeToken = findOne(s, "feedbackToken");
+    out.push({ query: q, fromHistory: !!removeToken, removeToken: removeToken ?? null });
   }
   return out;
 }

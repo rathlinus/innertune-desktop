@@ -285,15 +285,41 @@ via `parse.ts` helpers: `findOne`, `findAll`, `text`, `thumb`, `hiRes`,
 | Rate (like/dislike/clear) | `like/like` · `like/dislike` · `like/removelike` | `{ target:{ videoId } }` | ✅ done |
 | Subscribe / unsubscribe | `subscription/subscribe` · `…/unsubscribe` | `{ channelIds:[id] }` (success ⇒ `actions[].addToToastAction`) | ✅ done |
 | Create / delete playlist | `playlist/create` · `playlist/delete` | `{ title, description, privacyStatus }` → `{ playlistId }` · `{ playlistId }` | ✅ done |
-| Edit playlist (add/remove/rename) | `browse/edit_playlist` | `{ playlistId (RAW, no VL), actions:[…] }` — `ACTION_ADD_VIDEO {addedVideoId}` / `ACTION_REMOVE_VIDEO {removedVideoId,setVideoId}` / `ACTION_SET_PLAYLIST_NAME {playlistName}` | ✅ done |
+| Edit playlist (add/remove/rename/move) | `browse/edit_playlist` | `{ playlistId (RAW, no VL), actions:[…] }` — `ACTION_ADD_VIDEO {addedVideoId}` / `ACTION_REMOVE_VIDEO {removedVideoId,setVideoId}` / `ACTION_SET_PLAYLIST_NAME {playlistName}` / `ACTION_MOVE_VIDEO_BEFORE {setVideoId, movedSetVideoIdSuccessor}` | ✅ done |
+| Charts | `browse` | `{ browseId:"FEmusic_charts" }` → daily/weekly chart carousels (+ a top-artists list shelf) | ✅ done |
+| Moods & genres | `browse` | `{ browseId:"FEmusic_moods_and_genres" }` → grids of `musicNavigationButtonRenderer` category chips (each opens `category()`) | ✅ done |
+| Artist discography (full) | `browse` | `{ browseId, params }` from an artist carousel's header `browseEndpoint` (Shelf.moreBrowseId/moreParams) → `gridRenderer` of `musicTwoRowItemRenderer` | ✅ done |
+| Library subscriptions (Abos) | `browse` | `{ browseId:"FEmusic_library_corpus_artists" }` → artist `musicResponsiveListItemRenderer` rows (pageType ARTIST) | ✅ done |
+| New releases | `browse` | `{ browseId:"FEmusic_new_releases_albums" }` → grid of album cards | ✅ done |
+| Taste profile (read) | `browse` | `{ browseId:"FEmusic_tastebuilder" }` → `tastebuilderItemRenderer` (artist + `selectionFormValue`/`impressionValue`) | ✅ done |
+| Taste profile (set) | `browse` | `{ browseId:"FEmusic_tastebuilder", … selections }` (changes recs) | ⚠️ impl, not exercised |
+| get_song (metadata) | `player` (WEB_REMIX) | `{ videoId }` → `videoDetails` + `microformat` (no formats; audio still via ANDROID_VR) | ✅ done |
+| get_album_browse_id | HTML GET | `music.youtube.com/playlist?list=OLAK5uy_…` → regex `MPREb_[\w-]+` | ✅ done |
+| User / channel page | `browse` | `{ browseId:"UC…" }` → header + carousels (reuses `parseArtist`) | ✅ done |
+| Podcast / episode / channel | `browse` | `{ browseId }` (MPSP… / MPED… / UC…) → `musicMultiRowListItemRenderer` episodes (best-effort; no podcasts on dev acct) | ⚠️ impl, unverified |
+| Saved episodes playlist | `browse` | `{ browseId:"VLSE" }` → `parsePlaylist` ("Gespeicherte Folgen") | ✅ done |
+| Library podcasts | `browse` | `{ browseId:"FEmusic_library_non_music_audio_list" }` → cards | ✅ done |
+| Library uploads (songs/albums/artists) | `browse` | `FEmusic_library_privately_owned_tracks` / `…_releases` / `…_artists`; upload rows carry `entityId` (→ delete) | ✅ done |
+| Search suggestions (detailed) | `music/get_search_suggestions` | `{ input }` → `searchSuggestionRenderer` + its history `feedbackToken` | ✅ done |
+| Rate playlist/album | `like/like` · `like/dislike` · `like/removelike` | `{ target:{ playlistId } }` (others' playlists — your own 404s) | ✅ call verified |
+| Add history item (scrobble) | playback-tracking GET | WEB_REMIX `player` → `playbackTracking.videostatsPlaybackUrl` + `{ ver:2, c:WEB_REMIX, cpn }` | ⚠️ impl, not exercised |
+| Remove history / remove suggestion | `feedback` | `{ feedbackTokens:[…] }` (tokens from history rows / history suggestions) | ✅ (feedback verified) |
+| Delete upload | `music/delete_privately_owned_entity` | `{ entityId }` (from an upload row) | ⚠️ impl, not exercised |
+| Upload song | resumable upload to `upload.youtube.com/upload/usermusic` | `X-Goog-Upload-Command: start` → `…: upload, finalize` | ⚠️ impl, untestable here |
 
 Mutations all succeed with just HTTP 200 + a `responseContext` (success = 200).
 `ACTION_REMOVE_VIDEO` needs the per-item `setVideoId` (`playlistSetVideoId` on the
-playlist row — exposed on `Track.setVideoId`). They live in `ytm.ts` (`rate`,
-`subscribe`, `createPlaylist`, `deletePlaylist`, `addToPlaylist`,
-`removeFromPlaylist`, `renamePlaylist`) behind POST routes in `api.ts`, gated on a
-captured session. **Verify reversibly** (throwaway playlist; like/subscribe
-read-then-restore) so the account is left unchanged.
+playlist row — exposed on `Track.setVideoId`); `ACTION_MOVE_VIDEO_BEFORE` reorders
+an item before a `movedSetVideoIdSuccessor` (omit it ⇒ move to end), returns
+`STATUS_SUCCEEDED` — reorder propagates with slight eventual-consistency lag. They
+live in `ytm.ts` (`rate`, `ratePlaylist`, `subscribe`, `createPlaylist`,
+`deletePlaylist`, `addToPlaylist`, `removeFromPlaylist`, `movePlaylistItem`,
+`renamePlaylist`, `addHistoryItem`, `removeHistoryItems`, `removeSearchSuggestions`,
+`setTasteProfile`, `deleteUploadEntity`, `uploadSong`) behind POST routes in
+`api.ts`, gated on a captured session. **Verify reversibly** (throwaway playlist;
+like/subscribe read-then-restore) so the account is left unchanged. The ⚠️ rows
+above are implemented but deliberately **not** fired against the live account
+(they'd pollute history, alter recommendations, or delete the only real upload).
 
 **Search filter params** (the `params` field; `==` not `%3D%3D` in JSON bodies),
 all probed live and verified:
