@@ -247,6 +247,33 @@ export function usePlayer() {
     [patch, persist, playIndex]
   );
 
+  // Drag-to-reorder: move the item at `from` to `to`, keeping the playing track
+  // stable by following it to its new slot (or shifting its index when another
+  // item jumps across it).
+  const moveInQueue = useCallback(
+    (from: number, to: number) => {
+      const q = queueRef.current;
+      if (from === to || from < 0 || from >= q.length || to < 0 || to >= q.length) return;
+      const next = [...q];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      // Adjust the current index for the splice: removing `from` shifts later
+      // items down, inserting at `to` shifts items at/after it up.
+      const cur = indexRef.current;
+      let newCur = cur;
+      if (cur === from) newCur = to;
+      else {
+        if (from < cur) newCur -= 1;
+        if (to <= newCur) newCur += 1;
+      }
+      indexRef.current = newCur;
+      queueRef.current = next;
+      patch({ queue: next, index: newCur });
+      persist();
+    },
+    [patch, persist]
+  );
+
   const toggle = useCallback(() => {
     const audio = audioRef.current!;
     if (!state.current) return;
@@ -434,6 +461,7 @@ export function usePlayer() {
     playNext,
     enqueue,
     removeFromQueue,
+    moveInQueue,
     toggle,
     next,
     prev,

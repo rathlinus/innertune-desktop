@@ -21,6 +21,7 @@ interface Props {
   onToggle: () => void;
   onPlayAt: (i: number) => void;
   onPlay: (t: Track, queue: Track[]) => void;
+  onMove?: (from: number, to: number) => void;
   onMenu?: (ctx: MenuCtx) => void;
 }
 
@@ -32,11 +33,19 @@ export function FullscreenPlayer({
   onToggle,
   onPlayAt,
   onPlay,
+  onMove,
   onMenu,
 }: Props) {
   const { current, isPlaying, loading, queue, index } = state;
 
   const [tab, setTab] = useState<"next" | "lyrics" | "related">("next");
+  // Drag-to-reorder state for the "Als Nächstes" list (mirrors QueuePanel).
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const endDrag = () => {
+    setDragIndex(null);
+    setOverIndex(null);
+  };
   const [lyrics, setLyrics] = useState<Lyrics | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [related, setRelated] = useState<Track[] | null>(null);
@@ -260,12 +269,50 @@ export function FullscreenPlayer({
             >
               {queue.map((t, i) => {
                 const isNew = i >= enterFrom;
+                const dropCls =
+                  overIndex === i && dragIndex !== null && dragIndex !== i
+                    ? i > dragIndex
+                      ? " fsp-q-drop-after"
+                      : " fsp-q-drop-before"
+                    : "";
                 return (
                 <button
                   key={`${t.videoId}-${i}`}
                   ref={i === index ? activeRef : undefined}
-                  className={`fsp-q-item ${i === index ? "playing" : ""} ${isNew ? "fsp-q-enter" : ""}`}
+                  className={`fsp-q-item ${i === index ? "playing" : ""} ${isNew ? "fsp-q-enter" : ""}${
+                    i === dragIndex ? " fsp-q-dragging" : ""
+                  }${dropCls}`}
                   style={isNew ? { animationDelay: `${(i - enterFrom) * 45}ms` } : undefined}
+                  draggable={!!onMove}
+                  onDragStart={
+                    onMove
+                      ? (e) => {
+                          setDragIndex(i);
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", String(i));
+                        }
+                      : undefined
+                  }
+                  onDragOver={
+                    onMove
+                      ? (e) => {
+                          if (dragIndex === null) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          if (overIndex !== i) setOverIndex(i);
+                        }
+                      : undefined
+                  }
+                  onDrop={
+                    onMove
+                      ? (e) => {
+                          e.preventDefault();
+                          if (dragIndex !== null && dragIndex !== i) onMove(dragIndex, i);
+                          endDrag();
+                        }
+                      : undefined
+                  }
+                  onDragEnd={onMove ? endDrag : undefined}
                   onClick={() => onPlayAt(i)}
                   onContextMenu={
                     onMenu

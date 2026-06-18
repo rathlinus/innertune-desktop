@@ -953,6 +953,7 @@ export default function App() {
           onToggle={player.toggle}
           onPlayAt={player.playAt}
           onPlay={playTrack}
+          onMove={player.moveInQueue}
           onMenu={setMenu}
         />
       )}
@@ -964,6 +965,7 @@ export default function App() {
           onClose={() => setQueueOpen(false)}
           onPlayAt={player.playAt}
           onRemove={player.removeFromQueue}
+          onMove={player.moveInQueue}
           onMenu={setMenu}
         />
       )}

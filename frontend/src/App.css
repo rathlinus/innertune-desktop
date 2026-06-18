@@ -1397,6 +1397,30 @@
 .fsp-q-item.playing {
   background: rgba(255, 255, 255, 0.08);
 }
+/* Drag-to-reorder feedback (mirrors .queue-row-* in the side panel). */
+.fsp-q-item.fsp-q-dragging {
+  opacity: 0.4;
+}
+.fsp-q-item.fsp-q-drop-before,
+.fsp-q-item.fsp-q-drop-after {
+  position: relative;
+}
+.fsp-q-item.fsp-q-drop-before::before,
+.fsp-q-item.fsp-q-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.fsp-q-item.fsp-q-drop-before::before {
+  top: -1px;
+}
+.fsp-q-item.fsp-q-drop-after::after {
+  bottom: -1px;
+}
 /* Entrance for rows appended to the queue (endless radio / autoplay) */
 @keyframes fsp-q-enter {
   from {
@@ -1983,6 +2007,32 @@ input[type="range"]:hover::-moz-range-thumb {
 }
 .queue-row-active .queue-title {
   color: var(--accent);
+}
+
+/* Drag-to-reorder feedback. The dragged row fades; the row under the cursor
+   shows a line on the side the dragged item would land. */
+.queue-row-dragging {
+  opacity: 0.4;
+}
+.queue-row-drop-before,
+.queue-row-drop-after {
+  position: relative;
+}
+.queue-row-drop-before::before,
+.queue-row-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.queue-row-drop-before::before {
+  top: -1px;
+}
+.queue-row-drop-after::after {
+  bottom: -1px;
 }
 .queue-art {
   width: 40px;
