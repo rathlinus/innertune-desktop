@@ -927,6 +927,22 @@
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 20px;
 }
+
+/* A shelf whose title links to its full grid ("Mehr anzeigen"). */
+.shelf-title-link {
+  cursor: pointer;
+}
+.shelf-title-link:hover {
+  text-decoration: underline;
+}
+
+/* The full-grid page behind a shelf's "Mehr" link — same card tiles as the
+   carousels, wrapped into a grid instead of a horizontal scroller. */
+.shelf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 20px;
+}
 .lib-card {
   cursor: pointer;
 }

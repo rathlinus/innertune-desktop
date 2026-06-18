@@ -7,6 +7,7 @@ import {
   getAccount,
   getAlbum,
   getArtist,
+  getArtistAlbums,
   getAuthStatus,
   getCategory,
   getExplore,
@@ -25,6 +26,7 @@ import { usePlayer } from "./usePlayer";
 import { PlayerBar } from "./PlayerBar";
 import { FullscreenPlayer } from "./FullscreenPlayer";
 import { Home } from "./Home";
+import { CardGrid } from "./CardGrid";
 import { SearchResults } from "./SearchResults";
 import { ArtistView } from "./ArtistView";
 import { AlbumView } from "./AlbumView";
@@ -90,6 +92,7 @@ type View =
   | { kind: "list"; title: string; playlistId?: string; editable?: boolean }
   | { kind: "artist"; browseId: string }
   | { kind: "album"; browseId: string }
+  | { kind: "grid"; title: string }
   | { kind: "history" };
 
 export default function App() {
@@ -109,6 +112,7 @@ export default function App() {
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [exploreShelves, setExploreShelves] = useState<Shelf[]>([]);
   const [categoryShelves, setCategoryShelves] = useState<Shelf[]>([]);
+  const [gridCards, setGridCards] = useState<HomeCard[] | null>(null);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -269,6 +273,23 @@ export default function App() {
     },
     [openCategory]
   );
+
+  // A shelf's "Mehr" link → its full grid (an artist's complete albums/singles/
+  // videos, a home shelf's dedicated page, …) via the moreBrowseId/moreParams
+  // the parser exposes on the shelf.
+  const onShelfMore = useCallback(async (shelf: Shelf) => {
+    if (!shelf.moreBrowseId) return;
+    setError(null);
+    setGridCards(null);
+    setView({ kind: "grid", title: shelf.title ?? "" });
+    try {
+      const page = await getArtistAlbums(shelf.moreBrowseId, shelf.moreParams);
+      setGridCards(page.cards);
+    } catch (e) {
+      setError(String(e));
+      setGridCards([]);
+    }
+  }, []);
 
   function addToHistory(term: string) {
     setSearchHistory((h) =>
@@ -820,14 +841,14 @@ export default function App() {
           (shelves.length === 0 && !error ? (
             <div className="status">Wird geladen …</div>
           ) : (
-            <Home shelves={shelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} />
+            <Home shelves={shelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} onMore={onShelfMore} />
           ))}
 
         {view.kind === "explore" &&
           (exploreShelves.length === 0 && !error ? (
             <div className="status">Wird geladen …</div>
           ) : (
-            <Home shelves={exploreShelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} />
+            <Home shelves={exploreShelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} onMore={onShelfMore} />
           ))}
 
         {view.kind === "category" && (
@@ -836,7 +857,20 @@ export default function App() {
             {categoryShelves.length === 0 && !error ? (
               <div className="status">Wird geladen …</div>
             ) : (
-              <Home shelves={categoryShelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} />
+              <Home shelves={categoryShelves} nowId={nowId} onCard={onCard} onChip={onChip} onCardMenu={openCardMenu} onMore={onShelfMore} />
+            )}
+          </>
+        )}
+
+        {view.kind === "grid" && (
+          <>
+            <h1 className="page-title">{view.title}</h1>
+            {gridCards === null && !error ? (
+              <div className="status">Wird geladen …</div>
+            ) : gridCards && gridCards.length === 0 ? (
+              <div className="status muted">Nichts gefunden.</div>
+            ) : (
+              <CardGrid cards={gridCards ?? []} nowId={nowId} onCard={onCard} onMenu={openCardMenu} />
             )}
           </>
         )}
@@ -864,6 +898,7 @@ export default function App() {
             onAdd={(t) => setAddTarget(t.videoId)}
             onMenu={openMenu}
             onCardMenu={openCardMenu}
+            onMore={onShelfMore}
           />
         )}
 

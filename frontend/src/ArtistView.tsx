@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ArtistPage, HomeCard, Track } from "./types";
+import type { ArtistPage, HomeCard, Shelf, Track } from "./types";
 import { getArtist, subscribe } from "./api";
 import { TrackList } from "./TrackList";
 import { CardShelf } from "./CardShelf";
@@ -13,9 +13,10 @@ interface Props {
   onAdd?: (t: Track) => void;
   onMenu?: (t: Track, e: React.MouseEvent) => void;
   onCardMenu?: (c: HomeCard, e: React.MouseEvent) => void;
+  onMore?: (shelf: Shelf) => void;
 }
 
-export function ArtistView({ browseId, nowId, onPlay, onCard, onAdd, onMenu, onCardMenu }: Props) {
+export function ArtistView({ browseId, nowId, onPlay, onCard, onAdd, onMenu, onCardMenu, onMore }: Props) {
   const [data, setData] = useState<ArtistPage | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [subscribed, setSubscribed] = useState(false);
@@ -80,7 +81,7 @@ export function ArtistView({ browseId, nowId, onPlay, onCard, onAdd, onMenu, onC
       )}
 
       {data.shelves.map((sh) => (
-        <CardShelf key={sh.title} shelf={sh} nowId={nowId} onCard={onCard} onMenu={onCardMenu} />
+        <CardShelf key={sh.title} shelf={sh} nowId={nowId} onCard={onCard} onMenu={onCardMenu} onMore={onMore} />
       ))}
     </div>
   );

@@ -3,7 +3,10 @@ import type { ArtistCard, HomeCard, Playlist, Track } from "./types";
 import {
   getLibraryAlbums,
   getLibraryArtists,
+  getLibraryPodcasts,
   getLibrarySongs,
+  getLibrarySubscriptions,
+  getLibraryUploadSongs,
   getPlaylists,
 } from "./api";
 import { TrackList } from "./TrackList";
@@ -29,12 +32,15 @@ const artistCard = (a: ArtistCard): HomeCard => ({
   explicit: false,
 });
 
-type Tab = "playlists" | "songs" | "albums" | "artists";
+type Tab = "playlists" | "songs" | "albums" | "artists" | "subscriptions" | "uploads" | "podcasts";
 const TABS: { key: Tab; label: string }[] = [
   { key: "playlists", label: "Playlists" },
   { key: "songs", label: "Songs" },
   { key: "albums", label: "Alben" },
   { key: "artists", label: "Künstler" },
+  { key: "subscriptions", label: "Abos" },
+  { key: "uploads", label: "Uploads" },
+  { key: "podcasts", label: "Podcasts" },
 ];
 
 interface Props {
@@ -57,6 +63,9 @@ export function LibraryView(props: Props) {
   const [songs, setSongs] = useState<Track[]>([]);
   const [albums, setAlbums] = useState<HomeCard[]>([]);
   const [artists, setArtists] = useState<ArtistCard[]>([]);
+  const [subscriptions, setSubscriptions] = useState<ArtistCard[]>([]);
+  const [uploads, setUploads] = useState<Track[]>([]);
+  const [podcasts, setPodcasts] = useState<HomeCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -70,7 +79,13 @@ export function LibraryView(props: Props) {
         ? getLibrarySongs().then(setSongs)
         : tab === "albums"
         ? getLibraryAlbums().then(setAlbums)
-        : getLibraryArtists().then(setArtists);
+        : tab === "artists"
+        ? getLibraryArtists().then(setArtists)
+        : tab === "subscriptions"
+        ? getLibrarySubscriptions().then(setSubscriptions)
+        : tab === "uploads"
+        ? getLibraryUploadSongs().then(setUploads)
+        : getLibraryPodcasts().then(setPodcasts);
     job.catch((e) => setErr(String(e))).finally(() => setLoading(false));
   }, [tab]);
 
@@ -151,10 +166,14 @@ export function LibraryView(props: Props) {
         </div>
       )}
 
-      {!loading && !err && tab === "artists" && (
+      {!loading && !err && (tab === "artists" || tab === "subscriptions") && (
         <div className="card-grid">
-          {artists.length === 0 && <div className="status muted">Keine Künstler in der Mediathek.</div>}
-          {artists.map((a) => (
+          {(tab === "artists" ? artists : subscriptions).length === 0 && (
+            <div className="status muted">
+              {tab === "artists" ? "Keine Künstler in der Mediathek." : "Keine abonnierten Künstler."}
+            </div>
+          )}
+          {(tab === "artists" ? artists : subscriptions).map((a) => (
             <div key={a.browseId} className="lib-card" onClick={() => onOpenArtist(a.browseId)}
               onContextMenu={(e) => { e.preventDefault(); onCardMenu(artistCard(a), e); }}>
               <div className="lib-card-art-wrap">
@@ -172,6 +191,41 @@ export function LibraryView(props: Props) {
               {a.subtitle && <div className="card-sub">{a.subtitle}</div>}
             </div>
           ))}
+        </div>
+      )}
+
+      {!loading && !err && tab === "uploads" && (
+        uploads.length === 0 ? (
+          <div className="status muted">Keine hochgeladenen Titel.</div>
+        ) : (
+          <TrackList tracks={uploads} nowId={nowId} onPlay={onPlay} onAdd={onAdd} onLike={onLike} likes={likes} onMenu={onMenu} />
+        )
+      )}
+
+      {!loading && !err && tab === "podcasts" && (
+        <div className="card-grid">
+          {podcasts.length === 0 && <div className="status muted">Keine Podcasts.</div>}
+          {podcasts.map((p, i) => {
+            const id = p.playlistId ?? p.browseId;
+            return (
+              <div
+                key={(p.browseId ?? p.playlistId ?? "") + i}
+                className="lib-card"
+                onClick={() => id && onOpenPlaylist(id, p.title ?? "")}
+                onContextMenu={(e) => { e.preventDefault(); onCardMenu(p, e); }}
+              >
+                <div className="lib-card-art-wrap">
+                  {p.thumbnail ? (
+                    <img className="lib-card-art" src={p.thumbnail} alt="" loading="lazy" />
+                  ) : (
+                    <div className="lib-card-art lib-card-art-empty" />
+                  )}
+                </div>
+                <div className="card-title">{p.title}</div>
+                {p.subtitle && <div className="card-sub">{p.subtitle}</div>}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

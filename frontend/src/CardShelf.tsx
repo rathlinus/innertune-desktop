@@ -26,12 +26,14 @@ export function CardShelf({
   onCard,
   onChip,
   onMenu,
+  onMore,
 }: {
   shelf: Shelf;
   nowId?: string;
   onCard: (c: HomeCard) => void;
   onChip?: (c: Chip) => void;
   onMenu?: (c: HomeCard, e: React.MouseEvent) => void;
+  onMore?: (shelf: Shelf) => void;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
 
@@ -69,11 +71,25 @@ export function CardShelf({
     );
   }
 
+  // A shelf whose header links to a full grid (artist discography, etc.) gets a
+  // clickable title + "Mehr" affordance that opens that grid via onMore.
+  const canMore = !!(onMore && shelf.moreBrowseId);
   return (
     <section className="shelf">
       <div className="shelf-head">
-        <h2 className="shelf-title">{shelf.title}</h2>
+        <h2
+          className={`shelf-title ${canMore ? "shelf-title-link" : ""}`}
+          onClick={canMore ? () => onMore!(shelf) : undefined}
+          title={canMore ? "Alle anzeigen" : undefined}
+        >
+          {shelf.title}
+        </h2>
         <div className="shelf-actions">
+          {canMore && (
+            <button className="mehr" onClick={() => onMore!(shelf)}>
+              Mehr
+            </button>
+          )}
           <button className="carousel-btn" onClick={() => scroll(-1)} title="Zurück">
             <IconChevronLeft size={24} />
           </button>
@@ -85,7 +101,7 @@ export function CardShelf({
 
       <div className="shelf-track" ref={trackRef}>
         {shelf.cards.map((card, i) => (
-          <Card
+          <CardTile
             key={(card.videoId ?? card.playlistId ?? card.browseId ?? "") + i}
             card={card}
             active={!!card.videoId && card.videoId === nowId}
@@ -98,7 +114,9 @@ export function CardShelf({
   );
 }
 
-function Card({
+// A single card tile — shared by the carousel (CardShelf) and the wrapping
+// CardGrid (a shelf's "Mehr" target).
+export function CardTile({
   card,
   active,
   onClick,
