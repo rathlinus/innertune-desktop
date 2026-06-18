@@ -315,7 +315,13 @@ export default function App() {
   const playRadio = useCallback(
     async (t: Track) => {
       radioTokenRef.current = null;
-      player.play(t, [t]);
+      // If the seed is the track that's already playing, start its radio without
+      // restarting playback — just collapse the queue to it and append the radio.
+      if (player.state.current?.videoId === t.videoId) {
+        player.seedQueue(t);
+      } else {
+        player.play(t, [t]);
+      }
       try {
         const up = await getRadio(t.videoId);
         if (up.tracks.length) {

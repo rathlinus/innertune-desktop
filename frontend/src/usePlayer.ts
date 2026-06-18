@@ -173,6 +173,19 @@ export function usePlayer() {
     [patch, persist]
   );
 
+  // Collapse the queue to a single track WITHOUT restarting playback — used when
+  // starting a radio from the song that's already playing. Keeps audio.src and
+  // the playhead intact; radio tracks then append after this seed.
+  const seedQueue = useCallback(
+    (track: Track) => {
+      queueRef.current = [track];
+      indexRef.current = 0;
+      patch({ queue: [track], index: 0, current: track });
+      persist();
+    },
+    [patch, persist]
+  );
+
   // "Als Nächstes abspielen" — insert one or more tracks right after the current
   // one (in order) so they play next without disturbing the rest of the queue.
   const playNext = useCallback(
@@ -416,6 +429,7 @@ export function usePlayer() {
     state,
     play,
     playAt: playIndex,
+    seedQueue,
     appendQueue,
     playNext,
     enqueue,
