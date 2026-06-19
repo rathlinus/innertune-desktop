@@ -45,4 +45,5 @@ contextBridge.exposeInMainWorld("native", {
     ipcRenderer.on("playback:control", listener);
     return () => ipcRenderer.removeListener("playback:control", listener);
   },
+  setAutostart: (enabled: boolean) => ipcRenderer.send("app:set-autostart", enabled),
 });

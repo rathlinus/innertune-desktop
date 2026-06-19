@@ -1,5 +1,5 @@
 import type { CSSProperties, MouseEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fmtTime } from "./format";
 import type { PlayerState } from "./usePlayer";
 import { Spinner } from "./Spinner";
@@ -91,6 +91,32 @@ export function PlayerBar({
 
   const progressPct = duration ? (smoothPos / duration) * 100 : 0;
   const volPct = volume * 100;
+
+  // Remember the last non-zero volume so unmuting restores it instead of
+  // jumping to full. Updated in an effect (refs must not be written in render).
+  const lastVolRef = useRef(volume || 1);
+  useEffect(() => {
+    if (volume > 0) lastVolRef.current = volume;
+  }, [volume]);
+  const toggleMute = () => onVolume(volume > 0 ? 0 : lastVolRef.current || 1);
+
+  // Scroll-to-adjust: hovering the volume control and scrolling nudges the
+  // volume up/down. A native, non-passive wheel listener lets us preventDefault
+  // so the page doesn't scroll. Re-bound on volume/onVolume change so it always
+  // reads the current value.
+  const volRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = volRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1; // scroll up = louder
+      const next = Math.min(1, Math.max(0, volume + dir * 0.05));
+      onVolume(Math.round(next * 100) / 100);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [volume, onVolume]);
 
   const onBarClick = (e: MouseEvent) => {
     // Ignore clicks on the interactive controls (buttons, sliders).
@@ -198,23 +224,25 @@ export function PlayerBar({
 
         {/* Right: volume / repeat / shuffle / expand */}
         <div className="player-right">
-          <button
-            className="ctrl ctrl-sm"
-            onClick={() => onVolume(volume > 0 ? 0 : 1)}
-            title="Stummschalten"
-          >
-            {volume > 0 ? <IconVolume size={22} /> : <IconVolumeMute size={22} />}
-          </button>
-          <input
-            className="vol"
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={volume}
-            style={fill(volPct, "#fff")}
-            onChange={(e) => onVolume(parseFloat(e.target.value))}
-          />
+          <div className="vol-control" ref={volRef} title="Scrollen zum Anpassen">
+            <button
+              className="ctrl ctrl-sm"
+              onClick={toggleMute}
+              title="Stummschalten"
+            >
+              {volume > 0 ? <IconVolume size={22} /> : <IconVolumeMute size={22} />}
+            </button>
+            <input
+              className="vol"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={volume}
+              style={fill(volPct, "#fff")}
+              onChange={(e) => onVolume(parseFloat(e.target.value))}
+            />
+          </div>
           <button
             className={`ctrl ctrl-sm ${repeat !== "off" ? "ctrl-on" : ""}`}
             onClick={onRepeat}

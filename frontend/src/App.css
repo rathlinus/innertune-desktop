@@ -909,6 +909,13 @@
   justify-content: flex-end;
   gap: 4px;
 }
+/* Wraps the mute button + slider so a wheel listener can cover both; scrolling
+   here adjusts the volume. */
+.vol-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .vol {
   width: 80px;
   margin: 0 4px;
@@ -2302,4 +2309,227 @@ input[type="range"]:hover::-moz-range-thumb {
   .pl-cover {
     max-width: 240px;
   }
+}
+
+/* ---------- Settings page ---------- */
+.settings-view {
+  max-width: 760px;
+}
+.settings-section {
+  margin-bottom: 36px;
+}
+.settings-heading {
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text);
+  margin: 0 0 4px;
+  padding: 0 4px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-row:last-child {
+  border-bottom: none;
+}
+.settings-row-text {
+  min-width: 0;
+}
+.settings-row-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+}
+.settings-row-desc {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.settings-row-control {
+  flex-shrink: 0;
+}
+
+/* Pill toggle switch */
+.settings-toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border: none;
+  border-radius: 999px;
+  background: #4d4d4d;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease;
+}
+.settings-toggle.on {
+  background: var(--accent);
+}
+.settings-toggle-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.settings-toggle.on .settings-toggle-knob {
+  transform: translateX(18px);
+}
+
+/* Segmented choice control */
+.settings-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  background: var(--bg-elev);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.settings-seg {
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.settings-seg:hover {
+  color: var(--text);
+}
+.settings-seg.active {
+  background: #fff;
+  color: #030303;
+}
+
+/* Volume-curve live preview */
+.vol-preview {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 18px 4px 8px;
+}
+.vol-graph {
+  flex: 1;
+  min-width: 0;
+  background: linear-gradient(180deg, #1c1c1c, #161616);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  line-height: 0;
+}
+.vol-graph svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.vol-fill {
+  stroke: none;
+}
+.vol-grid {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.vol-diag {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+.vol-gain-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.vol-heard-line {
+  fill: none;
+  stroke: #3ea6ff;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+}
+.vol-marker {
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.vol-dot-gain {
+  fill: var(--accent);
+}
+.vol-dot-heard {
+  fill: #3ea6ff;
+}
+.vol-readouts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  width: 132px;
+  flex-shrink: 0;
+}
+.vol-stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.vol-stat-val {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.vol-stat-gain {
+  color: var(--accent);
+}
+.vol-stat-heard {
+  color: #3ea6ff;
+}
+.vol-stat-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.vol-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0;
+  padding: 0 16px 4px;
+}
+.vol-key {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  margin-left: 12px;
+}
+.vol-key:first-child {
+  margin-left: 0;
+}
+.vol-key-gain {
+  background: var(--accent);
+}
+.vol-key-heard {
+  background: #3ea6ff;
 }

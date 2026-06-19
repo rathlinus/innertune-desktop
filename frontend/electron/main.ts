@@ -93,7 +93,12 @@ async function createWindow(): Promise<void> {
   const useMica = isWindows11();
   const state = loadWindowState();
 
+  // An autostart login passes --hidden (see setAutostart): come up parked in the
+  // tray rather than flashing a window onto the user's freshly-loaded desktop.
+  const startHidden = process.argv.includes("--hidden");
+
   win = new BrowserWindow({
+    show: !startHidden,
     x: state.x,
     y: state.y,
     width: state.width,
@@ -188,6 +193,21 @@ function controlFromArgv(argv: string[]): string | null {
   return null;
 }
 
+// Register/unregister the OS "launch at login" item. Electron's login-item API
+// is Windows + macOS only (the Linux AppImage has no install location for the
+// system to autostart, so we no-op there — the renderer hides the toggle to
+// match). We start hidden so an autostart login quietly parks the app in the
+// tray instead of popping a window: macOS gets openAsHidden, Windows gets our
+// own --hidden flag (read back in createWindow).
+function setAutostart(enabled: boolean): void {
+  if (process.platform === "linux") return;
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    openAsHidden: true,
+    args: ["--hidden"],
+  });
+}
+
 function sendControl(action: string): void {
   if (win && !win.isDestroyed()) win.webContents.send("playback:control", action);
 }
@@ -230,6 +250,11 @@ if (!app.requestSingleInstanceLock()) {
     process.env.YTM_DATA ||= path.join(app.getPath("userData"), "data");
 
     spoofImageReferer();
+
+    // Renderer-driven "launch at login" toggle (Settings). App.tsx pushes the
+    // stored preference here on startup and on every change, keeping the OS
+    // login item in sync with the in-app setting.
+    ipcMain.on("app:set-autostart", (_e, enabled: boolean) => setAutostart(!!enabled));
 
     // Discord Rich Presence. A no-op unless a client id is configured (see
     // electron/discord.ts); reconnects quietly if Discord isn't running yet.

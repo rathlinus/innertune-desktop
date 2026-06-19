@@ -40,6 +40,8 @@ import { CardMenu, type CardMenuCtx } from "./CardMenu";
 import { StatsModal } from "./StatsModal";
 import { QueuePanel } from "./QueuePanel";
 import { LoginModal } from "./LoginModal";
+import { SettingsView } from "./SettingsView";
+import { useSettings } from "./settings";
 import {
   IconSearch,
   IconHome,
@@ -49,6 +51,7 @@ import {
   IconAdd,
   IconHistory,
   IconRemoveCircle,
+  IconSettings,
 } from "./icons";
 import "./App.css";
 
@@ -93,10 +96,21 @@ type View =
   | { kind: "artist"; browseId: string }
   | { kind: "album"; browseId: string }
   | { kind: "grid"; title: string }
-  | { kind: "history" };
+  | { kind: "history" }
+  | { kind: "settings" };
 
 export default function App() {
-  const player = usePlayer();
+  const { settings, set: setSetting } = useSettings();
+  const player = usePlayer({
+    volumeCurve: settings.volumeCurve,
+    resumePlayback: settings.resumePlayback,
+  });
+  // Keep the OS "launch at login" item in lockstep with the stored preference:
+  // pushed on startup (in case the user disabled it elsewhere) and on every
+  // change. No-op in the browser, where there's no native bridge.
+  useEffect(() => {
+    NATIVE?.setAutostart(settings.autostart);
+  }, [settings.autostart]);
   // Endless autoplay: the radio continuation token for the current session, and
   // a guard so we only fetch one extension at a time.
   const radioTokenRef = useRef<string | null>(null);
@@ -365,6 +379,7 @@ export default function App() {
   const playIdx = player.state.index;
   const queueLen = player.state.queue.length;
   useEffect(() => {
+    if (!settings.endlessAutoplay) return;
     if (playIdx < 0 || queueLen === 0 || playIdx < queueLen - 3) return;
     if (extendingRef.current) return;
     const current = player.state.queue[playIdx];
@@ -510,8 +525,9 @@ export default function App() {
   // ended / forward skip), never when the user deliberately picked it or stepped
   // back to it. Manual thumbs-down is handled separately in `toggleDislike`.
   useEffect(() => {
+    if (!settings.skipDisliked) return;
     if (nowId && dislikes.has(nowId) && wasAutoAdvanced()) skipNext();
-  }, [nowId, dislikes, skipNext, wasAutoAdvanced]);
+  }, [nowId, dislikes, skipNext, wasAutoAdvanced, settings.skipDisliked]);
 
   // ---- context-menu actions ----
   const openMenu = useCallback((track: Track, e: React.MouseEvent) => {
@@ -809,6 +825,16 @@ export default function App() {
           <IconHistory size={24} />
           <span className="nav-label">Verlauf</span>
         </button>
+        <button
+          className={`nav-item ${view.kind === "settings" ? "active" : ""}`}
+          onClick={() => {
+            setError(null);
+            setView({ kind: "settings" });
+          }}
+        >
+          <IconSettings size={24} />
+          <span className="nav-label">Einstellungen</span>
+        </button>
 
         <button className="new-playlist" onClick={newPlaylist}>
           <IconAdd size={22} />
@@ -935,6 +961,14 @@ export default function App() {
             onLike={toggleLike}
             likes={likes}
             onMenu={openMenu}
+          />
+        )}
+
+        {view.kind === "settings" && (
+          <SettingsView
+            settings={settings}
+            onChange={setSetting}
+            volume={player.state.volume}
           />
         )}
 

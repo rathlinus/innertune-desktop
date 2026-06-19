@@ -26,6 +26,8 @@ export interface NativeBridge {
   updatePlayback(state: NativePlayback): void;
   /** Subscribe to control commands from native UI (taskbar buttons). Returns an unsubscribe. */
   onControl(cb: (action: NativeControl) => void): () => void;
+  /** Enable/disable launching the app at system login (minimised to tray). */
+  setAutostart(enabled: boolean): void;
 }
 
 declare global {

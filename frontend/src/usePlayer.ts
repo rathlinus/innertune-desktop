@@ -2,6 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Track } from "./types";
 import { streamUrl } from "./api";
 import { useNativeMedia } from "./useNativeMedia";
+import { DEFAULTS, volumeGain, type VolumeCurve } from "./settings";
+
+export interface PlayerOptions {
+  // Slider-position → output-gain mapping. Read live, so changing it in
+  // Settings re-tapers the volume immediately.
+  volumeCurve?: VolumeCurve;
+  // When false, start fresh on launch instead of restoring the last session.
+  resumePlayback?: boolean;
+}
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -59,9 +68,22 @@ function loadPersisted(): Persisted | null {
  * Owns a single <audio> element and exposes simple transport controls plus a
  * queue. The whole app drives playback through this hook.
  */
-export function usePlayer() {
+export function usePlayer(options: PlayerOptions = {}) {
   // Read the persisted snapshot exactly once so playback can be restored.
-  const [saved] = useState(loadPersisted);
+  // Honour the resume-playback setting: when off, keep the saved volume/
+  // shuffle/repeat preferences but drop the track, queue and playhead.
+  const [saved] = useState(() => {
+    const snap = loadPersisted();
+    if (!snap || options.resumePlayback === false) {
+      return snap ? { ...snap, track: null, queue: [], index: -1, position: 0 } : null;
+    }
+    return snap;
+  });
+
+  // Live volume curve, mirrored in a ref so the setVolume callback and the
+  // restore effect read the latest value without re-subscribing. Kept in sync
+  // by the effect below (refs must not be written during render).
+  const curveRef = useRef<VolumeCurve>(options.volumeCurve ?? DEFAULTS.volumeCurve);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   if (!audioRef.current) {
@@ -340,11 +362,9 @@ export function usePlayer() {
 
   const setVolume = useCallback(
     (v: number) => {
-      // `v` is the linear slider position (0..1). Human loudness perception is
-      // roughly logarithmic, so a linear slider feels "all loud at the top".
-      // Apply an exponential taper (squared) so the lower half of the slider
-      // gives fine control and the travel feels even to the ear.
-      audioRef.current!.volume = v * v;
+      // `v` is the linear slider position (0..1); map it to output gain under
+      // the user's chosen curve (see settings.volumeGain).
+      audioRef.current!.volume = volumeGain(curveRef.current, v);
       volumeRef.current = v;
       patch({ volume: v });
       persist();
@@ -352,11 +372,19 @@ export function usePlayer() {
     [patch, persist]
   );
 
+  // Sync the curve ref and re-apply the gain when the volume curve changes, so
+  // switching Linear/Exponential/Logarithmic in Settings takes effect without
+  // touching the slider.
+  useEffect(() => {
+    curveRef.current = options.volumeCurve ?? DEFAULTS.volumeCurve;
+    audioRef.current!.volume = volumeGain(curveRef.current, volumeRef.current);
+  }, [options.volumeCurve]);
+
   // Restore the audio element on first mount: apply the saved volume and queue
   // up the last track (paused — browsers block autoplay without a gesture).
   useEffect(() => {
     const audio = audioRef.current!;
-    audio.volume = volumeRef.current * volumeRef.current;
+    audio.volume = volumeGain(curveRef.current, volumeRef.current);
     const track = queueRef.current[indexRef.current] ?? saved?.track;
     if (track) {
       audio.src = streamUrl(track.videoId);
