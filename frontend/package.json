@@ -1,7 +1,7 @@
 {
   "name": "frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A small, self-hosted YouTube Music desktop client.",
   "author": "rathlinus",
   "repository": {
