@@ -1,0 +1,21 @@
+const targets=await (await fetch("http://127.0.0.1:9222/json")).json();
+const page=targets.find(t=>t.type==="page"&&t.url.includes("music.youtube.com"));
+const ws=new WebSocket(page.webSocketDebuggerUrl);
+let id=0;const pend=new Map();
+const cmd=(m,p)=>new Promise(r=>{const i=++id;pend.set(i,r);ws.send(JSON.stringify({id:i,method:m,params:p}));});
+ws.addEventListener("message",e=>{const m=JSON.parse(e.data);if(m.id&&pend.has(m.id)){pend.get(m.id)(m);pend.delete(m.id);}});
+await new Promise(r=>ws.addEventListener("open",r));
+const expr=`(()=>{
+  const r={};
+  r.url=location.href;
+  r.loggedIn = (window.ytcfg&&ytcfg.get&&ytcfg.get('LOGGED_IN'));
+  r.hasYtPlayer = typeof window._yt_player;
+  r.movie = !!document.getElementById('movie_player');
+  r.video = !!document.querySelector('video');
+  r.playerScripts = [...document.querySelectorAll('script[src]')].map(s=>s.src).filter(s=>/base\.js|player/.test(s)).slice(0,5);
+  r.winKeys = Object.keys(window).filter(k=>/player|sig|cipher|ytp|_yt/i.test(k)).slice(0,40);
+  return JSON.stringify(r);
+})()`;
+const res=await cmd("Runtime.evaluate",{expression:expr,returnByValue:true});
+console.log(JSON.stringify(JSON.parse(res.result.result.value),null,2));
+ws.close();

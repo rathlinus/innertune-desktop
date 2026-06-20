@@ -49,8 +49,8 @@ history, search suggestions, etc.) the same way.
 
 ## 1. Architecture (where things live)
 
-The **live backend is a Vite middleware in `frontend/server/`** — NOT the legacy
-Python `backend/` (dead). Everything runs on one dev server.
+The **backend is a Vite middleware in `frontend/server/`**. Everything (UI **and**
+API) runs on one dev server.
 
 | File | Role |
 |---|---|
@@ -378,16 +378,113 @@ What was tried and why this is the right answer:
 - **Authed WEB_REMIX `player`** → reliable but every format is `signatureCipher`,
   and this "trusted player" has **no statically extractable** sig/`n` (no classic
   `split("")…join("")`, no helper object — it's a runtime challenge VM). Confirmed
-  on the current `base.js`: no `.set("sig"` / `get("n")`-transform anchors. So the
-  WEB_REMIX premium path (itag 141=259k AAC, 774=300k webm) stays out of reach
-  without a full challenge solver — **not worth it** given the VR path works.
+  on the current `base.js` (`player/ac678d18`, `player_es6`): no helper-object
+  swap/reverse/splice fingerprint; the `_yt_player` top-level arity-1 fns are all
+  **decoys** (`mh`/`ht` just prefix `crn_`/`crx_`, `QB` url-encodes, `h0`
+  quote-wraps); the large arity-1 entries are ES6 **classes** (an interpreter).
+  So the sig/`n` decipher is **not** liftable as a function.
 
-Quality: ANDROID_VR tops out at **itag 251 opus ~150k / itag 140 AAC ~130k**.
-That's the cap of this approach; premium 256k would need the WEB_REMIX cipher VM.
+ANDROID_VR quality cap: **itag 251 opus ~150k / itag 140 AAC ~130k**. For premium
+256k (itag 141 AAC, 774 Opus) see §8.1 — that path is now **solved** too, via the
+controlled Chrome, not a native VM solver.
 
 Implementation: `innertube.ts` (`callPlayer` attaches `visitorData`;
 `resolveAudio` picks the top-bitrate audio format with a ready `url`) and
 `stream.ts` (caches the URL ~30 min, proxies bytes with HTTP Range).
+
+---
+
+## 8.1 Premium 256k — CRACKED natively, no browser, no po_token (2026-06-20)
+
+The WEB_REMIX cipher VM is **fully solved in pure Node** — `base.js` run in a
+`node:vm`, no Chrome at runtime, no `pot`. End-to-end verified: itag 141,
+6,876,682 B / 213.573 s = **258 kbps**, full file fetched complete (200) in
+~270 ms, valid MP4 `ftyp…dash`. Probe: `_probe/q_native.mjs` (also
+`q_expose.mjs`, `q_ntest.mjs`).
+
+### The cipher is an obfuscated bytecode VM, not classic split/swap/splice
+The current player (`player_es6`, `ac678d18`) has **no** classic anchors
+(no `a.split("")…join("")`, no `enhanced_except`, no `.get("n")`). The decipher
+lives in closure-private mutually-recursive interpreters (`ty`, `EC`, `j$`, `pq`,
+`NQ` — minified names are **reused** across scopes, so static extraction is a
+trap). Operations are hidden behind a **global string array** `t =
+"url;U;toString;…;split;…;join;…".split(";")` and reached via XOR'd indices
+(`t[Y^7169]` etc.). The sig helper is `var T6={SR:swap, JH:reverse, z4:splice}`,
+also `t[]`-indirected. `_yt_player`'s 474 exported fns are **all decoys** for this
+purpose (e.g. `mh`/`ht` just prefix `crn_`/`crx_`).
+
+### How it was cracked — the eval-portal
+1. Run the whole `base.js` in a `node:vm` (it bootstraps fine with `navigator`/
+   `document` stubs; only ~50 globals leak — it's IIFE-wrapped).
+2. **Inject an eval-portal** into the IIFE scope: place
+   `globalThis.__ev=function(_n){try{return eval(_n)}catch(e){}}` right after the
+   `var T6={…}` definition. `__ev`'s closure is the IIFE scope, so from Node you
+   can now call **any** closure-private function/var by name (`ty`, `EC`, `t`, …).
+3. Found the URL-decoration fn `yDz`: sig = `ty(41,7221, EC(40,4766, s))`
+   (the `ty` arg `41` makes `(M|40)==M` → descramble branch, `Y=41^7221=7196`,
+   and `t[7196^7169]=t[29]="split"`). The descramble recipe is **swap(0,21),
+   swap(0,1), reverse** (`T6.SR`,`T6.SR`,`T6.JH`).
+4. The `n` transform is `EC`'s array-challenge branch (`if(M-3>>3==2)` ⇒ M∈19..26):
+   `n = EC(19, 7741, nOrig)` (`Q=19^7741=7726`, `t[7726^7731]=t[29]="split"`).
+5. Verified both against a browser-captured `s→sig` / `n→n` **oracle** (read the
+   browser's own `getPlayerResponse()` cipher + its emitted `videoplayback` URL):
+   exact match.
+
+### The native recipe (headless, MA-compatible)
+```
+sig = ty(41, 7221, EC(40, 4766, s))     // EC(40,…) is identity here; ty does the work
+n   = EC(19, 7741, nOrig)
+```
+1. WEB_REMIX `player` call (existing §3 transport) → `adaptiveFormats[itag 141]`:
+   `signatureCipher` = `s` + `sp` + `url` (the `url` carries the raw `n`).
+2. Fetch `base.js` once (jsUrl from the watch-page HTML / player config) and cache
+   per player id (`ac678d18`).
+3. Run it in a `node:vm` with the eval-portal; compute `sig` and `n`.
+4. Build the URL: `url.set(sp, sig)`, `url.set("n", n)`; GET with a `Range:`
+   header. → raw `audio/mp4`, 206, Range-seekable, **no `pot` required**.
+
+### Why no `pot`
+Our own `player` response contains **no** po_token and the resulting URL streams
+fine — the cookie+`SAPISIDHASH`+`visitorData` auth on the metadata transport is
+sufficient for the media GET. (The browser path *did* attach a `pot` because the
+web client requests SABR/UMP; we never ask for `ump=1`, so we get plain media.)
+
+### Robustness / maintenance — anchor on STRUCTURE, never names
+YouTube re-minifies `base.js` constantly: **every var name, array index and opcode
+rotates between builds of even the *same* player id** (observed `ac678d18` shipping
+both a `t=`/`T6`/`ty`/`EC` build and an `x=`/`qU4`/`BK`/`KS`/`lM` build, different
+sizes). So nothing can be hardcoded by name. The working extractor derives it all
+structurally each run:
+- **global string array** + **swap helper**: the array-swap fingerprint
+  `<m>:function(a,b){var c=a[0];a[0]=a[b%a[<ARR>[<n>]]];…}` yields the array var
+  name `<ARR>` and the helper object.
+- **sig opcodes**: the URL-decorator call `SIGFN(A,B, ECFN(C,D, <fmt>.s))` is read
+  verbatim → `sig = SIGFN(A,B, ECFN(C,D, s))`.
+- **n driver**: the function whose body splits its arg and then builds a big
+  self-referencing opcode array (`z[ARR[V^off]](ARR[V^..]) , w=[ … ] ; w[i]=w`).
+  `Q = ARR.indexOf("split") ^ off`; scan `driver(M, Q^M, n)` over `M` and take the
+  majority output (the valid array-challenge `M`s all agree). Note the n driver is
+  **not** necessarily the sig-inner fn — that coincided in one build, not the other.
+
+All of this lives in the eval-portal helper (run `base.js`, inject
+`globalThis.__ev=_x=>eval(_x)` after the helper object, drive the entries). The
+opcodes/offsets themselves never need hardcoding.
+
+### Status — shipped in the Music Assistant fork (2026-06-20)
+Wired into the MA YTMusic provider (`repos/server/.../providers/ytmusic/`):
+- `_cipher.mjs` — the structural eval-portal descrambler (above), pure Node.
+- Python `_resolve_audio_premium()` — WEB_REMIX `player` (cookie+SAPISIDHASH+
+  visitorData+sts) → pick itag 141/774 → `node _cipher.mjs base.js <s> <n>` →
+  `urlencode` the URL → hand to the existing Range proxy. `base.js` is fetched from
+  the home-page `"jsUrl"` and cached on disk per player id (6 h TTL).
+- The old **"User does not have YouTube Music Premium"** check is restored
+  (`_user_has_ytm_premium`: WEB_REMIX `player` for a probe track must offer itag
+  141). ANDROID_VR (§8, ~150k) stays the fallback when the cipher can't be solved
+  (e.g. `node` missing). Verified live: itag 141, 258 kbps, HTTP 206, across builds.
+
+For **this** repo's `stream.ts` the same drop-in still applies (a
+`resolvePremiumAudio()` beside `resolveAudio()`); not yet wired here. This
+**supersedes** the controlled-Chrome capture idea (no browser needed at all).
 
 ---
 
