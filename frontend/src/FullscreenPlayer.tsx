@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TransitionEvent } from "react";
-import { getLyrics, getSimilar } from "./api";
-import type { Lyrics, Track } from "./types";
+import { getLyrics, getPlayerInfo, getSimilar } from "./api";
+import type { Lyrics, StreamInfo, Track } from "./types";
 import type { PlayerState } from "./usePlayer";
 import type { MenuCtx } from "./TrackMenu";
 import { IconCollapse, IconNote, IconPlay, IconPause } from "./icons";
@@ -11,6 +11,85 @@ import { Equalizer } from "./Equalizer";
 /** "artist · album", dropping any empty parts. */
 function subtitle(t: Track) {
   return [t.artist, t.album].filter(Boolean).join(" · ");
+}
+
+/** Human-friendly codec name from an RFC 6381 codec string ("mp4a.40.2" → AAC). */
+function codecLabel(codec: string | null): string {
+  if (!codec) return "—";
+  if (codec.startsWith("mp4a")) return "AAC";
+  if (codec.startsWith("opus")) return "Opus";
+  if (codec.startsWith("vorbis")) return "Vorbis";
+  if (codec.startsWith("ac-3")) return "Dolby AC-3";
+  if (codec.startsWith("ec-3")) return "Dolby EC-3";
+  return codec.toUpperCase();
+}
+
+// "Audioqualität" tab — the technical details of the stream the player is really
+// pulling, read from /api/player-info (the same format resolveAudio serves). The
+// headline tells you at a glance whether you're on premium itag 141 (~256 kbps
+// AAC) or the standard fallback; the table shows the itag plus the real codec.
+function QualityPanel({ videoId, hq }: { videoId: string; hq: boolean }) {
+  const [info, setInfo] = useState<StreamInfo | null>(null);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    let cancel = false;
+    setInfo(null);
+    setErr(false);
+    getPlayerInfo(videoId, hq)
+      .then((i) => !cancel && setInfo(i))
+      .catch(() => !cancel && setErr(true));
+    return () => {
+      cancel = true;
+    };
+  }, [videoId, hq]);
+
+  if (err) return <div className="fsp-empty fsp-fade">Qualität nicht verfügbar.</div>;
+  if (!info) return <div className="fsp-empty fsp-fade">Wird geladen …</div>;
+
+  const hi = info.itag === 141;
+  const kbps = (n: number | null) => (n ? `${Math.round(n / 1000)} kbps` : "—");
+  const khz = info.audioSampleRate
+    ? `${(Number(info.audioSampleRate) / 1000).toFixed(1).replace(/\.0$/, "")} kHz`
+    : "—";
+  const rows: [string, string][] = [
+    ["itag", String(info.itag ?? "—")],
+    ["Codec", info.codec ? `${codecLabel(info.codec)} (${info.codec})` : "—"],
+    ["Container", info.container ?? "—"],
+    ["Bitrate", kbps(info.bitrate)],
+    ["Ø Bitrate", kbps(info.averageBitrate)],
+    ["Abtastrate", khz],
+    ["Kanäle", String(info.audioChannels ?? "—")],
+    ["Quelle", info.client],
+  ];
+
+  return (
+    <div className="fsp-quality fsp-fade">
+      <div className={`fsp-quality-head ${hi ? "is-hi" : ""}`}>
+        <span className="fsp-quality-badge">{hi ? "Hi-Res" : "Standard"}</span>
+        <div className="fsp-quality-head-text">
+          <div className="fsp-quality-label">
+            {hi ? "Premium-Tonqualität" : "Geringe Tonqualität"}
+          </div>
+          <div className="fsp-quality-sub">
+            {codecLabel(info.codec)}
+            {info.bitrate ? ` · ${Math.round(info.bitrate / 1000)} kbps` : ""}
+            {` · itag ${info.itag ?? "?"}`}
+          </div>
+        </div>
+      </div>
+      <table className="fsp-quality-table">
+        <tbody>
+          {rows.map(([k, v]) => (
+            <tr key={k}>
+              <td className="fsp-quality-key">{k}</td>
+              <td className="fsp-quality-val">{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 interface Props {
@@ -23,6 +102,12 @@ interface Props {
   onPlay: (t: Track, queue: Track[]) => void;
   onMove?: (from: number, to: number) => void;
   onMenu?: (ctx: MenuCtx) => void;
+  // Show the "Audioqualität" tab (premium itag 141 vs. standard). Driven by the
+  // "Qualitätsanzeige" setting.
+  showQuality?: boolean;
+  // Whether premium audio is enabled, so the quality tab reports the format
+  // that's actually streaming.
+  highQuality?: boolean;
 }
 
 export function FullscreenPlayer({
@@ -35,10 +120,16 @@ export function FullscreenPlayer({
   onPlay,
   onMove,
   onMenu,
+  showQuality,
+  highQuality,
 }: Props) {
   const { current, isPlaying, loading, queue, index } = state;
 
-  const [tab, setTab] = useState<"next" | "lyrics" | "related">("next");
+  const [tab, setTab] = useState<"next" | "lyrics" | "related" | "quality">("next");
+  // If the quality tab is open and the setting gets turned off, fall back.
+  useEffect(() => {
+    if (!showQuality && tab === "quality") setTab("next");
+  }, [showQuality, tab]);
   // Drag-to-reorder state for the "Als Nächstes" list (mirrors QueuePanel).
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
@@ -257,6 +348,14 @@ export function FullscreenPlayer({
             >
               Ähnliche Titel
             </button>
+            {showQuality && (
+              <button
+                className={`fsp-tab ${tab === "quality" ? "active" : ""}`}
+                onClick={() => setTab("quality")}
+              >
+                Audioqualität
+              </button>
+            )}
           </div>
 
           {tab === "next" && (
@@ -408,6 +507,10 @@ export function FullscreenPlayer({
             ) : (
               <div className="fsp-empty fsp-fade">Keine ähnlichen Titel verfügbar.</div>
             ))}
+
+          {tab === "quality" && currentId && (
+            <QualityPanel key={currentId} videoId={currentId} hq={!!highQuality} />
+          )}
         </div>
       </div>
     </div>

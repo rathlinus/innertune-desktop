@@ -12,6 +12,7 @@ import {
   type StreamInfo,
   type SongDetails,
 } from "./innertube";
+import { premiumStreamInfo } from "./premium";
 import {
   parseTracks,
   parseHome,
@@ -430,7 +431,14 @@ export async function feedback(tokens: string[]): Promise<void> {
 }
 
 // "Statistics for nerds" for the current track's audio stream.
-export async function streamInfo(videoId: string): Promise<StreamInfo> {
+export async function streamInfo(videoId: string, hq = false): Promise<StreamInfo> {
+  if (hq) {
+    try {
+      return await premiumStreamInfo(videoId);
+    } catch {
+      /* fall back to the standard ANDROID_VR format details */
+    }
+  }
   return playerStreamInfo(videoId);
 }
 

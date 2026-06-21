@@ -21,6 +21,14 @@ export interface Settings {
   // the tray). Desktop-only; a no-op in the browser. The OS login item is kept
   // in sync with this flag from App.tsx.
   autostart: boolean;
+  // Show a small badge in the player bar telling you the audio quality of the
+  // current stream — premium itag 141 (~256 kbps) vs. the standard fallback.
+  showQualityBadge: boolean;
+  // Stream premium audio (itag 141, ~256 kbps AAC) when available, instead of
+  // the standard ~150 kbps format. Requires a YouTube Premium account; falls
+  // back to standard automatically when premium isn't available. Applies to the
+  // next track that loads.
+  highQuality: boolean;
 }
 
 export const DEFAULTS: Settings = {
@@ -29,6 +37,8 @@ export const DEFAULTS: Settings = {
   resumePlayback: true,
   endlessAutoplay: true,
   autostart: false,
+  showQualityBadge: false,
+  highQuality: true,
 };
 
 const STORAGE_KEY = "ytm.settings.v1";

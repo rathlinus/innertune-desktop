@@ -103,19 +103,21 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
 
   try {
     // ---- streaming ----
+    // `hq=1` opts into the premium itag-141 path (falls back automatically).
+    const hq = url.searchParams.get("hq") === "1";
     if (route.startsWith("/stream/")) {
-      await streamAudio(decodeURIComponent(route.slice("/stream/".length)), req, res);
+      await streamAudio(decodeURIComponent(route.slice("/stream/".length)), req, res, hq);
       return true;
     }
     if (route.startsWith("/download/") && method === "GET") {
       const id = decodeURIComponent(route.slice("/download/".length));
       const name = url.searchParams.get("name") || id;
-      await downloadAudio(id, name, res);
+      await downloadAudio(id, name, res, hq);
       return true;
     }
     if (route.startsWith("/player-info/") && method === "GET") {
       const id = decodeURIComponent(route.slice("/player-info/".length));
-      sendJson(res, 200, await streamInfo(id));
+      sendJson(res, 200, await streamInfo(id, hq));
       return true;
     }
 

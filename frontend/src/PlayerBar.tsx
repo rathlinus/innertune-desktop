@@ -1,6 +1,8 @@
 import type { CSSProperties, MouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { fmtTime } from "./format";
+import { getPlayerInfo } from "./api";
+import type { StreamInfo } from "./types";
 import type { PlayerState } from "./usePlayer";
 import { Spinner } from "./Spinner";
 import {
@@ -38,6 +40,42 @@ interface Props {
   onMenu?: (e: MouseEvent) => void;
   onQueue?: () => void;
   queueOpen?: boolean;
+  // Show the small HQ/LQ tag next to the overflow menu. Driven by the
+  // "Qualitätsanzeige" setting; `highQuality` selects which format to report.
+  showQuality?: boolean;
+  highQuality?: boolean;
+}
+
+// A compact HQ/LQ tag for the currently playing stream. Reuses /api/player-info
+// (the format the server actually serves) — premium itag 141/774 → "HQ", the
+// standard fallback → "LQ".
+function QualityTag({ videoId, hq }: { videoId: string; hq: boolean }) {
+  const [info, setInfo] = useState<StreamInfo | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    setInfo(null);
+    getPlayerInfo(videoId, hq)
+      .then((i) => !cancel && setInfo(i))
+      .catch(() => {
+        /* best-effort — just don't show a tag if it fails */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [videoId, hq]);
+
+  if (!info) return null;
+  const isHq = info.itag === 141 || info.itag === 774;
+  const kbps = info.bitrate ? ` · ${Math.round(info.bitrate / 1000)} kbps` : "";
+  return (
+    <span
+      className={`quality-tag ${isHq ? "hq" : "lq"}`}
+      title={`${isHq ? "Premium" : "Standard"}-Tonqualität · itag ${info.itag ?? "?"}${kbps}`}
+    >
+      {isHq ? "HQ" : "LQ"}
+    </span>
+  );
 }
 
 function fill(pct: number, color: string): CSSProperties {
@@ -66,6 +104,8 @@ export function PlayerBar({
   onMenu,
   onQueue,
   queueOpen,
+  showQuality,
+  highQuality,
 }: Props) {
   const { current, isPlaying, loading, position, duration, volume, shuffle, repeat } =
     state;
@@ -212,6 +252,9 @@ export function PlayerBar({
           >
             <IconThumbDown size={20} active={disliked} />
           </button>
+          {showQuality && current && (
+            <QualityTag key={current.videoId} videoId={current.videoId} hq={!!highQuality} />
+          )}
           <button
             className="ctrl ctrl-sm"
             title="Mehr"

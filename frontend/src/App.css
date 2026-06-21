@@ -903,6 +903,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Compact HQ/LQ stream-quality tag next to the player-bar overflow menu. */
+.quality-tag {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+}
+.quality-tag.hq {
+  color: #0a3d1a;
+  background: #2ecf63;
+}
+.quality-tag.lq {
+  color: #fff;
+  background: #5f5f5f;
+}
 .player-right {
   display: flex;
   align-items: center;
@@ -1543,6 +1561,72 @@
   margin-top: 20px;
   color: var(--text-dim);
   font-size: 12px;
+}
+
+/* ---------- "Audioqualität" tab ---------- */
+.fsp-quality {
+  padding: 8px 4px 24px;
+  overflow-y: auto;
+}
+/* YouTube-style quality headline card: a pill badge + label, lit up in the
+   accent colour when the stream is premium itag 141. */
+.fsp-quality-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  margin-bottom: 16px;
+}
+.fsp-quality-head.is-hi {
+  background: rgba(255, 0, 51, 0.12);
+}
+.fsp-quality-badge {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #fff;
+  background: #5f5f5f;
+}
+.fsp-quality-head.is-hi .fsp-quality-badge {
+  background: var(--accent);
+}
+.fsp-quality-head-text {
+  min-width: 0;
+}
+.fsp-quality-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+.fsp-quality-sub {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.fsp-quality-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.fsp-quality-table td {
+  padding: 9px 4px;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.fsp-quality-key {
+  color: var(--text-dim);
+  white-space: nowrap;
+  width: 40%;
+}
+.fsp-quality-val {
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .modal-waiting {

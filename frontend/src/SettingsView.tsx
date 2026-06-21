@@ -263,6 +263,28 @@ export function SettingsView({ settings, onChange, volume }: Props) {
             onChange={(v) => onChange("resumePlayback", v)}
           />
         </Row>
+
+        <Row
+          title="Höhere Tonqualität"
+          desc="Spielt Songs in Premium-Qualität (itag 141, ~256 kbps AAC) statt im Standard­format (~150 kbps). Benötigt YouTube Premium; fällt sonst automatisch zurück. Gilt ab dem nächsten Titel."
+        >
+          <Toggle
+            label="Höhere Tonqualität"
+            checked={settings.highQuality}
+            onChange={(v) => onChange("highQuality", v)}
+          />
+        </Row>
+
+        <Row
+          title="Qualitätsanzeige"
+          desc="Blendet im Vollbild-Player den Tab „Audioqualität“ ein – mit itag, Codec und Bitrate des laufenden Streams (Premium itag 141 ~256 kbps vs. Standard)."
+        >
+          <Toggle
+            label="Qualitätsanzeige"
+            checked={settings.showQualityBadge}
+            onChange={(v) => onChange("showQualityBadge", v)}
+          />
+        </Row>
       </section>
 
       <section className="settings-section">

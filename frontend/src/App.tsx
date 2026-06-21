@@ -104,6 +104,7 @@ export default function App() {
   const player = usePlayer({
     volumeCurve: settings.volumeCurve,
     resumePlayback: settings.resumePlayback,
+    highQuality: settings.highQuality,
   });
   // Keep the OS "launch at login" item in lockstep with the stored preference:
   // pushed on startup (in case the user disabled it elsewhere) and on every
@@ -577,14 +578,14 @@ export default function App() {
     (t: Track) => {
       const name = `${t.artist ? `${t.artist} - ` : ""}${t.title ?? t.videoId}`;
       const a = document.createElement("a");
-      a.href = downloadUrl(t.videoId, name);
+      a.href = downloadUrl(t.videoId, name, settings.highQuality);
       a.download = name;
       document.body.appendChild(a);
       a.click();
       a.remove();
       showToast("Download gestartet …");
     },
-    [showToast]
+    [showToast, settings.highQuality]
   );
 
   // ---- card context-menu (home/search/library cards) ----
@@ -1011,6 +1012,8 @@ export default function App() {
         }
         onQueue={() => setQueueOpen((q) => !q)}
         queueOpen={queueOpen}
+        showQuality={settings.showQualityBadge}
+        highQuality={settings.highQuality}
       />
 
       {fsMounted && (
@@ -1024,6 +1027,8 @@ export default function App() {
           onPlay={playTrack}
           onMove={player.moveInQueue}
           onMenu={setMenu}
+          showQuality={settings.showQualityBadge}
+          highQuality={settings.highQuality}
         />
       )}
 
@@ -1074,7 +1079,13 @@ export default function App() {
         />
       )}
 
-      {statsTrack && <StatsModal track={statsTrack} onClose={() => setStatsTrack(null)} />}
+      {statsTrack && (
+        <StatsModal
+          track={statsTrack}
+          hq={settings.highQuality}
+          onClose={() => setStatsTrack(null)}
+        />
+      )}
 
       {addTarget && (
         <AddToPlaylistModal

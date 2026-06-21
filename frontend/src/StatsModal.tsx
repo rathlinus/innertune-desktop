@@ -6,19 +6,27 @@ import { IconClose } from "./icons";
 // "Statistiken für Interessierte" — a small overlay with the technical details
 // of the audio stream the player is actually pulling (itag/codec/bitrate/…),
 // fetched from the ANDROID_VR player response via /api/player-info.
-export function StatsModal({ track, onClose }: { track: Track; onClose: () => void }) {
+export function StatsModal({
+  track,
+  hq = false,
+  onClose,
+}: {
+  track: Track;
+  hq?: boolean;
+  onClose: () => void;
+}) {
   const [info, setInfo] = useState<StreamInfo | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     let cancel = false;
-    getPlayerInfo(track.videoId)
+    getPlayerInfo(track.videoId, hq)
       .then((i) => !cancel && setInfo(i))
       .catch((e) => !cancel && setErr(String(e)));
     return () => {
       cancel = true;
     };
-  }, [track.videoId]);
+  }, [track.videoId, hq]);
 
   const mb = (n: string | null) =>
     n ? `${(Number(n) / 1_048_576).toFixed(1)} MB` : "—";

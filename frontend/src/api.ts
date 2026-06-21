@@ -95,19 +95,27 @@ export async function searchTracks(query: string): Promise<Track[]> {
   return (await json<{ results: Track[] }>(res)).results;
 }
 
-export function streamUrl(videoId: string): string {
-  return `${API_BASE}/stream/${videoId}`;
+// `hq` opts into the premium itag-141 stream (the server falls back to the
+// standard format if premium isn't available).
+export function streamUrl(videoId: string, hq = false): string {
+  return `${API_BASE}/stream/${videoId}${hq ? "?hq=1" : ""}`;
 }
 
 // "Herunterladen" — a URL that streams the audio with a Content-Disposition so
 // the browser/Electron saves it with a real filename + matching extension.
-export function downloadUrl(videoId: string, name: string): string {
-  return `${API_BASE}/download/${videoId}?name=${encodeURIComponent(name)}`;
+export function downloadUrl(videoId: string, name: string, hq = false): string {
+  const qs = new URLSearchParams({ name });
+  if (hq) qs.set("hq", "1");
+  return `${API_BASE}/download/${videoId}?${qs}`;
 }
 
 // "Statistiken für Interessierte" — technical details of the current stream.
-export async function getPlayerInfo(videoId: string): Promise<StreamInfo> {
-  return json<StreamInfo>(await fetch(`${API_BASE}/player-info/${encodeURIComponent(videoId)}`));
+// `hq` reports the premium format's details to match what's being streamed.
+export async function getPlayerInfo(videoId: string, hq = false): Promise<StreamInfo> {
+  const qs = hq ? "?hq=1" : "";
+  return json<StreamInfo>(
+    await fetch(`${API_BASE}/player-info/${encodeURIComponent(videoId)}${qs}`)
+  );
 }
 
 // ---------- Auth (controlled-Chrome login) ----------

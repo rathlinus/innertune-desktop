@@ -10,6 +10,9 @@ export interface PlayerOptions {
   volumeCurve?: VolumeCurve;
   // When false, start fresh on launch instead of restoring the last session.
   resumePlayback?: boolean;
+  // Request the premium itag-141 stream. Read at track-load time, so toggling it
+  // in Settings takes effect on the next track (not the one already playing).
+  highQuality?: boolean;
 }
 
 export type RepeatMode = "off" | "all" | "one";
@@ -39,18 +42,26 @@ interface Persisted {
   repeat: RepeatMode;
 }
 
-// Song-identity key that ignores the OMV (music video) vs ATV (audio track)
-// distinction — YouTube gives them different videoIds for the same song. Keys
-// on the normalized title only (the seed track's artist comes from a card
-// subtitle like "Titel • …" and never matches the radio's byline). Strips
-// video-type markers ("(Lyric Video)") but keeps "(… Remix)". Keep in sync with
-// songKey() in server/parse.ts.
-const VIDEO_MARKER = /[([][^)\]]*\b(?:official|video|lyric|lyrics|audio|visuali\w*|clip|mv|hd|4k|hq)\b[^)\]]*[)\]]/g;
+// "Base recording" key used to dedupe the endless radio / autoplay queue.
+//
+// It ignores the OMV (music video) vs ATV (audio track) split — YouTube gives
+// those different videoIds for the same song — AND collapses alternate versions
+// of the same song: Radio Mix / Club Mix / Extended / New Version / Radio Edit /
+// Remix / Remaster / Live, etc. YouTube's instant mix loves to surface five
+// takes of one track, and without this the queue stacks them back-to-back (see
+// "The Summer Is Magic (Radio Mix)" → "(Gambrinus Club Mix)"). We key on the
+// normalized title only — the seed track's artist comes from a card subtitle
+// like "Titel • …" and never matches the radio's byline, so artist is unreliable
+// here. Drops *every* (…)/[…] parenthetical and trailing "- … " / "feat. …"
+// tail, leaving just the core title. Used only when appending radio results;
+// manual "Als Nächstes" / "In die Wiedergabeliste" keep distinct versions.
 function songKey(title: string | null): string {
   return (title ?? "")
     .toLowerCase()
-    .replace(VIDEO_MARKER, " ")
-    .replace(/[([][^)\]]*$/, " ")
+    .replace(/[([][^)\]]*[)\]]/g, " ") // drop all closed (…) and […] segments
+    .replace(/[([][^)\]]*$/, " ") // …and an unclosed trailing one
+    .replace(/\s[-–—]\s.*$/, " ") // drop "- Radio Edit" / "- Live" style tails
+    .replace(/\bfeat\.?\b.*$/, " ") // drop "feat. …" credits
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
@@ -84,6 +95,10 @@ export function usePlayer(options: PlayerOptions = {}) {
   // restore effect read the latest value without re-subscribing. Kept in sync
   // by the effect below (refs must not be written during render).
   const curveRef = useRef<VolumeCurve>(options.volumeCurve ?? DEFAULTS.volumeCurve);
+  // Live high-quality preference, mirrored in a ref so streamUrl() reads the
+  // latest value at track-load time without re-subscribing. Synced by the effect
+  // below (refs must not be written during render).
+  const hqRef = useRef<boolean>(options.highQuality ?? DEFAULTS.highQuality);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   if (!audioRef.current) {
@@ -152,7 +167,7 @@ export function usePlayer(options: PlayerOptions = {}) {
       indexRef.current = i;
       const track = queue[i];
       const audio = audioRef.current!;
-      audio.src = streamUrl(track.videoId);
+      audio.src = streamUrl(track.videoId, hqRef.current);
       patch({ current: track, index: i, loading: true, position: 0, duration: 0 });
       audio.play().catch(() => patch({ loading: false }));
     },
@@ -178,11 +193,14 @@ export function usePlayer(options: PlayerOptions = {}) {
   const appendQueue = useCallback(
     (tracks: Track[]) => {
       if (!tracks.length) return;
-      const have = new Set(queueRef.current.map((t) => songKey(t.title)));
+      // Fall back to videoId when a title reduces to an empty key (e.g. a title
+      // that is entirely a parenthetical) so unrelated tracks aren't merged.
+      const keyOf = (t: Track) => songKey(t.title) || t.videoId;
+      const have = new Set(queueRef.current.map(keyOf));
       const add: Track[] = [];
       for (const t of tracks) {
         if (!t.videoId) continue;
-        const k = songKey(t.title);
+        const k = keyOf(t);
         if (have.has(k)) continue;
         have.add(k);
         add.push(t);
@@ -380,6 +398,12 @@ export function usePlayer(options: PlayerOptions = {}) {
     audioRef.current!.volume = volumeGain(curveRef.current, volumeRef.current);
   }, [options.volumeCurve]);
 
+  // Keep the high-quality preference ref in sync; the new value is picked up the
+  // next time a track loads (we don't reload the playing track mid-song).
+  useEffect(() => {
+    hqRef.current = options.highQuality ?? DEFAULTS.highQuality;
+  }, [options.highQuality]);
+
   // Restore the audio element on first mount: apply the saved volume and queue
   // up the last track (paused — browsers block autoplay without a gesture).
   useEffect(() => {
@@ -387,7 +411,7 @@ export function usePlayer(options: PlayerOptions = {}) {
     audio.volume = volumeGain(curveRef.current, volumeRef.current);
     const track = queueRef.current[indexRef.current] ?? saved?.track;
     if (track) {
-      audio.src = streamUrl(track.videoId);
+      audio.src = streamUrl(track.videoId, hqRef.current);
       audio.load();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
