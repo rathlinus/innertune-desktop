@@ -4,7 +4,7 @@ import { getLyrics, getPlayerInfo, getSimilar } from "./api";
 import type { Lyrics, StreamInfo, Track } from "./types";
 import type { PlayerState } from "./usePlayer";
 import type { MenuCtx } from "./TrackMenu";
-import { IconCollapse, IconNote, IconPlay, IconPause } from "./icons";
+import { IconCollapse, IconNote, IconPlay, IconPause, IconSearch } from "./icons";
 import { Spinner } from "./Spinner";
 import { Equalizer } from "./Equalizer";
 
@@ -108,6 +108,12 @@ interface Props {
   // Whether premium audio is enabled, so the quality tab reports the format
   // that's actually streaming.
   highQuality?: boolean;
+  // Show a search bar in the fullscreen player. Driven by the "Suchleiste im
+  // Vollbild-Player" setting.
+  showSearch?: boolean;
+  // Run a search (submitted from the in-player search bar). The parent closes
+  // the fullscreen player and shows the results.
+  onSearch?: (term: string) => void;
 }
 
 export function FullscreenPlayer({
@@ -122,8 +128,20 @@ export function FullscreenPlayer({
   onMenu,
   showQuality,
   highQuality,
+  showSearch,
+  onSearch,
 }: Props) {
   const { current, isPlaying, loading, queue, index } = state;
+
+  // Local query for the in-player search bar (only rendered when `showSearch`).
+  const [query, setQuery] = useState("");
+  const submitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    onSearch?.(q);
+    setQuery("");
+  };
 
   const [tab, setTab] = useState<"next" | "lyrics" | "related" | "quality">("next");
   // If the quality tab is open and the setting gets turned off, fall back.
@@ -283,6 +301,17 @@ export function FullscreenPlayer({
       <button className="fsp-close" onClick={onClose} title="Minimieren">
         <IconCollapse size={24} />
       </button>
+
+      {showSearch && (
+        <form className="fsp-search" onSubmit={submitSearch}>
+          <IconSearch size={22} className="searchbar-icon" />
+          <input
+            placeholder="Nach Songs, Alben, Künstlern und Podcasts suchen"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </form>
+      )}
 
       <div className="fsp-body">
         {/* Left: album art + meta — the focal point */}

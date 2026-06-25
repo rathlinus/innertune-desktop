@@ -24,6 +24,10 @@ export interface Settings {
   // Show a small badge in the player bar telling you the audio quality of the
   // current stream — premium itag 141 (~256 kbps) vs. the standard fallback.
   showQualityBadge: boolean;
+  // Show a search bar inside the fullscreen player, so you can search without
+  // first minimising it. Submitting a search closes the fullscreen player and
+  // shows the results.
+  showSearchInFullscreen: boolean;
   // Stream premium audio (itag 141, ~256 kbps AAC) when available, instead of
   // the standard ~150 kbps format. Requires a YouTube Premium account; falls
   // back to standard automatically when premium isn't available. Applies to the
@@ -38,6 +42,7 @@ export const DEFAULTS: Settings = {
   endlessAutoplay: true,
   autostart: false,
   showQualityBadge: false,
+  showSearchInFullscreen: false,
   highQuality: true,
 };
 

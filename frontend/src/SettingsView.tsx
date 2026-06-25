@@ -285,6 +285,17 @@ export function SettingsView({ settings, onChange, volume }: Props) {
             onChange={(v) => onChange("showQualityBadge", v)}
           />
         </Row>
+
+        <Row
+          title="Suchleiste im Vollbild-Player"
+          desc="Zeigt im Vollbild-Player eine Suchleiste an, sodass du suchen kannst, ohne ihn erst zu minimieren. Eine Suche schließt den Vollbild-Player und zeigt die Ergebnisse."
+        >
+          <Toggle
+            label="Suchleiste im Vollbild-Player"
+            checked={settings.showSearchInFullscreen}
+            onChange={(v) => onChange("showSearchInFullscreen", v)}
+          />
+        </Row>
       </section>
 
       <section className="settings-section">

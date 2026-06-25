@@ -12,7 +12,7 @@ import {
   type StreamInfo,
   type SongDetails,
 } from "./innertube";
-import { premiumStreamInfo } from "./premium";
+import { premiumStreamInfo, authedStreamInfo } from "./premium";
 import {
   parseTracks,
   parseHome,
@@ -439,7 +439,13 @@ export async function streamInfo(videoId: string, hq = false): Promise<StreamInf
       /* fall back to the standard ANDROID_VR format details */
     }
   }
-  return playerStreamInfo(videoId);
+  try {
+    return await playerStreamInfo(videoId);
+  } catch {
+    // Anonymous ANDROID_VR is blocked (age-gated / login-required); read the
+    // stats off the authenticated web player instead, matching playback.
+    return authedStreamInfo(videoId, hq);
+  }
 }
 
 // Subscribe / unsubscribe to an artist channel.

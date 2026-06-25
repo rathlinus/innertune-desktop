@@ -317,9 +317,12 @@ export function usePlayer(options: PlayerOptions = {}) {
   const toggle = useCallback(() => {
     const audio = audioRef.current!;
     if (!state.current) return;
-    if (audio.paused) audio.play();
+    // play() rejects (NotSupportedError / NotAllowedError) when the source failed
+    // to load or autoplay is blocked. Swallow it instead of letting it surface as
+    // an uncaught promise rejection; the error/onError handlers reset the UI.
+    if (audio.paused) audio.play().catch(() => patch({ loading: false }));
     else audio.pause();
-  }, [state.current]);
+  }, [state.current, patch]);
 
   // Pick the next index honoring shuffle; returns -1 at the end (no repeat-all).
   const nextIndex = useCallback((): number => {
@@ -446,7 +449,7 @@ export function usePlayer(options: PlayerOptions = {}) {
     const onEnded = () => {
       if (repeatRef.current === "one") {
         audio.currentTime = 0;
-        audio.play();
+        audio.play().catch(() => patch({ loading: false }));
         return;
       }
       const i = nextIndex();

@@ -63,13 +63,17 @@
 .app.desktop .topbar {
   -webkit-app-region: drag;
 }
+/* Only the interactive leaf elements opt out of dragging — NOT their wide
+   wrapper columns. The topbar is a 1fr | 720px | 1fr grid, so marking whole
+   containers (.search-wrap, .topbar-right) no-drag turned their empty space
+   into dead zones you couldn't grab. */
 .app.desktop .topbar button,
 .app.desktop .topbar input,
 .app.desktop .topbar a,
 .app.desktop .topbar .brand,
 .app.desktop .topbar .searchbar,
-.app.desktop .topbar .search-wrap,
-.app.desktop .topbar .topbar-right {
+.app.desktop .topbar .search-history,
+.app.desktop .topbar .account-menu {
   -webkit-app-region: no-drag;
 }
 
@@ -1182,6 +1186,43 @@
 .fsp-close:hover {
   background: rgba(255, 255, 255, 0.12);
   opacity: 1;
+}
+
+/* In-player search bar — centred at the top, above the close/minimise button.
+   Translucent so it reads cleanly over the blurred album-art backdrop. */
+.fsp-search {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(520px, calc(100% - 160px));
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(12px);
+}
+.fsp-search:focus-within {
+  background: rgba(0, 0, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.32);
+}
+.fsp-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: #fff;
+  font-size: 14px;
+  font-family: inherit;
+}
+.fsp-search input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .fsp-body {

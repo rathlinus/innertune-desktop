@@ -12,7 +12,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { resolveAudio, type AudioFormat } from "./innertube";
-import { resolvePremiumAudio } from "./premium";
+import { resolvePremiumAudio, resolveAuthedAudio } from "./premium";
 
 // Resolved URLs are short-lived signed links (the `expire` query param is hours
 // out, but be conservative); cache them briefly to avoid a player round-trip on
@@ -21,10 +21,14 @@ import { resolvePremiumAudio } from "./premium";
 const cache = new Map<string, { url: string; expires: number }>();
 const TTL_MS = 30 * 60 * 1000;
 
-// Resolve the audio format honoring the high-quality preference: when `hq` is
-// set, try the premium itag-141 path first and fall back to the standard
-// ANDROID_VR format if it's unavailable (non-Premium account, player rotation,
-// etc.). Without `hq`, go straight to the standard path.
+// Resolve the audio format honoring the high-quality preference:
+//   - HQ: try the premium itag-141 path first.
+//   - Otherwise: the standard anonymous ANDROID_VR format.
+//   - If both above are unavailable/blocked, fall back to the authenticated
+//     WEB_REMIX player. That path is signed in, so it plays content the
+//     anonymous ANDROID_VR client refuses with LOGIN_REQUIRED — chiefly
+//     age-restricted videos ("Sign in to confirm your age") and bot-walled
+//     requests — by descrambling the signatureCipher.
 async function resolveFormat(videoId: string, hq: boolean): Promise<AudioFormat> {
   if (hq) {
     try {
@@ -33,7 +37,11 @@ async function resolveFormat(videoId: string, hq: boolean): Promise<AudioFormat>
       /* fall through to the standard path */
     }
   }
-  return resolveAudio(videoId);
+  try {
+    return await resolveAudio(videoId);
+  } catch {
+    return resolveAuthedAudio(videoId, hq);
+  }
 }
 
 async function resolveUrl(videoId: string, hq: boolean): Promise<string> {

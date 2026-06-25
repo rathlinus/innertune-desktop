@@ -1029,6 +1029,11 @@ export default function App() {
           onMenu={setMenu}
           showQuality={settings.showQualityBadge}
           highQuality={settings.highQuality}
+          showSearch={settings.showSearchInFullscreen}
+          onSearch={(term) => {
+            doSearch(term);
+            setFullscreen(false);
+          }}
         />
       )}
 

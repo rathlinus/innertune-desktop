@@ -25,6 +25,11 @@ const PREMIUM_ITAGS = [141, 774];
 
 interface Portal {
   ev: (expr: string) => any;
+  // Like `ev`, but runs inside a fresh `runInContext` so V8's watchdog can abort
+  // a candidate that infinite-loops or blows the stack (returns undefined then).
+  // Essential for the behavioral n-driver search, which probes thousands of the
+  // player's own functions — some of which never return when called out of band.
+  evT: (expr: string, ms?: number) => any;
   ARR: string | null;
 }
 
@@ -34,6 +39,13 @@ interface PlayerAssets {
   sts: number;
   clientVersion: string;
   portal: Portal;
+  // The player's media-URL decorator function name (found once via the
+  // `("alr","yes")` fingerprint); null when this player has no such function.
+  decorator?: string | null;
+  // Whether driving that decorator produced a googlevideo-verified URL. Cached so
+  // we verify once per player build, then trust it (true) or fall straight through
+  // to the static-descramble fallback (false).
+  decoratorOk?: boolean;
 }
 
 // base.js rotates (a few times a day) and building the eval-portal is the
@@ -181,13 +193,35 @@ function makePortal(baseJs: string): Portal {
   createContext(ctx);
   runInContext(src, ctx, { timeout: 10000 });
   if (typeof ctx.__ev !== "function") throw new Error("eval-portal did not initialise");
-  return { ev: ctx.__ev, ARR };
+  // Timeout-guarded variant: route the in-closure __ev through runInContext so a
+  // runaway candidate is aborted by V8's watchdog instead of hanging the process.
+  const evT = (expr: string, ms = 150): any => {
+    try {
+      runInContext(`globalThis.__r=__ev(${JSON.stringify(expr)})`, ctx, { timeout: ms });
+      return ctx.__r;
+    } catch {
+      return undefined;
+    }
+  };
+  return { ev: ctx.__ev, evT, ARR };
 }
 
 // ---- signature / n descrambling -------------------------------------------
 
 const valid = (x: any, ref: string) =>
   typeof x === "string" && x.length >= 8 && x !== ref && /^[A-Za-z0-9_-]+$/.test(x);
+
+// A correctly descrambled `n` is a genuine scramble of the input: similar length
+// and — crucially — it does NOT contain the untransformed input verbatim. When a
+// candidate isn't really the n-driver (wrong function, or the right function
+// invoked with the wrong calling convention), its guard/catch branch typically
+// returns `<prefix>+input` (e.g. an undefined module var stringified to
+// "undefined" + the original n). Such a value still passes `valid()` (it's all
+// URL-safe chars) and can win a majority vote, yielding a dead URL googlevideo
+// 403s. Rejecting any output that embeds the raw input — and bounding the length
+// — filters that out so the caller falls back instead of streaming garbage.
+const validN = (x: any, ref: string): x is string =>
+  valid(x, ref) && !x.includes(ref) && x.length <= ref.length + 12;
 
 // A descrambled signature is a reorder of the input chars with a few spliced
 // off, i.e. a sub-multiset of the input. Charset-agnostic.
@@ -274,10 +308,56 @@ function descramble(
         const counts: Record<string, number> = {};
         for (let M = 0; M < 64; M++) {
           const r = ev(`${nDriver}(${M},${Q ^ M},${JSON.stringify(nIn)})`);
-          if (valid(r, nIn)) counts[r] = (counts[r] || 0) + 1;
+          if (validN(r, nIn)) counts[r] = (counts[r] || 0) + 1;
         }
         const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
         if (ranked.length) nOut = ranked[0][0];
+      }
+    }
+    // (A2) array-challenge n-driver (current "live" player family, e.g. player
+    // 1cf32b49). The driver is the function whose body builds a *self-referencing*
+    // opcode array (`w[V^k]=w`); the access immediately before that array splits
+    // the input string, so its XOR offset yields Q = ARR.indexOf("split") ^ off.
+    // Scanning driver(M, Q^M, n) over M, every M that reaches the array-challenge
+    // branch produces the same (correct) n — so the majority output wins. Iterate
+    // all self-ref arrays (dedup by driver fn) so a stray match can't shadow the
+    // real driver.
+    if (!nOut && ARR) {
+      const splitIdx = ev(`${ARR}.indexOf("split")`);
+      const splitRe = new RegExp(
+        "[A-Za-z0-9$_]+\\[" +
+          ARR +
+          "\\[([A-Za-z0-9$_]+)\\^(\\d+)\\]\\]\\(" +
+          ARR +
+          "\\[([A-Za-z0-9$_]+)\\^(\\d+)\\]\\)",
+        "g"
+      );
+      const tried = new Set<string>();
+      for (const selfRef of baseJs.matchAll(
+        /([A-Za-z0-9$_]+)\[[A-Za-z0-9$_]+\^\d+\]=\1[,;]/g
+      )) {
+        if (nOut || typeof splitIdx !== "number" || splitIdx < 0) break;
+        const fnDef = [
+          ...baseJs.slice(0, selfRef.index!).matchAll(/([A-Za-z0-9$_]+)=function\(/g),
+        ].pop();
+        if (!fnDef || tried.has(fnDef[1])) continue;
+        // The split access that seeds the challenge sits just before the opcode
+        // array literal, which can be ~1KB long — so look back far enough to clear
+        // it and take the *nearest* access (the last match) to stay in this branch.
+        const win = baseJs.slice(Math.max(0, selfRef.index! - 2000), selfRef.index!);
+        const accs = [...win.matchAll(splitRe)].filter((m) => m[1] === m[3]);
+        if (!accs.length) continue;
+        tried.add(fnDef[1]);
+        const fn = fnDef[1];
+        const Q = splitIdx ^ Number(accs[accs.length - 1][2]);
+        const counts: Record<string, number> = {};
+        for (let M = 0; M < 256; M++) {
+          const r = ev(`${fn}(${M},${Q ^ M},${JSON.stringify(nIn)})`);
+          if (validN(r, nIn)) counts[r] = (counts[r] || 0) + 1;
+        }
+        const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+        // require a real majority (>=3 agreeing M) so a single spurious hit can't win.
+        if (ranked.length && ranked[0][1] >= 3) nOut = ranked[0][0];
       }
     }
     // (B) classic n: anchor on the actual n-application site.
@@ -312,7 +392,7 @@ function descramble(
         const call = (v: string) =>
           ev(`${fn}(${dec ? `decodeURIComponent(${JSON.stringify(v)})` : JSON.stringify(v)})`);
         const r = call(nIn);
-        if (valid(r, nIn) && r.length <= nIn.length + 12 && call(probe) !== r) {
+        if (validN(r, nIn) && call(probe) !== r) {
           nOut = r;
           break;
         }
@@ -417,13 +497,144 @@ async function getPlayer(videoId: string): Promise<{ player: any; assets: Player
   return { player, assets };
 }
 
-function pickPremium(player: any): any | null {
-  const formats: any[] = (player?.streamingData?.adaptiveFormats ?? []).filter((f: any) =>
+function audioFormats(player: any): any[] {
+  return (player?.streamingData?.adaptiveFormats ?? []).filter((f: any) =>
     String(f.mimeType).startsWith("audio/")
   );
-  const byItag = new Map<number, any>(formats.map((f) => [f.itag, f]));
+}
+
+function pickPremium(player: any): any | null {
+  const byItag = new Map<number, any>(audioFormats(player).map((f) => [f.itag, f]));
   for (const t of PREMIUM_ITAGS) if (byItag.has(t)) return byItag.get(t);
   return null;
+}
+
+// Pick the audio format for the requested tier from the authenticated web
+// player. HQ prefers the premium itags (141/774) and otherwise the
+// highest-bitrate format; standard mode excludes the premium itags so the
+// fallback for blocked videos matches the quality of the anonymous path
+// (~itag 251/140) rather than silently upgrading to Premium audio.
+function pickAudio(player: any, hq: boolean): any | null {
+  if (hq) {
+    const premium = pickPremium(player);
+    if (premium) return premium;
+  }
+  const formats = audioFormats(player);
+  const pool = hq ? formats : formats.filter((f) => !PREMIUM_ITAGS.includes(f.itag));
+  return (pool.length ? pool : formats).sort((a, b) => (b.bitrate ?? 0) - (a.bitrate ?? 0))[0] ?? null;
+}
+
+// ---- universal n + signature descrambling (drive the player's own URL code) ----
+//
+// Rather than locate and replay the n-driver ourselves (fragile — each player
+// rotates its cipher VM, and the newest families compile n into a multi-step
+// bytecode program with no single callable entry), we run the player's OWN
+// media-URL decorator and read the signed values back. Every player ships a
+// decorator that stamps `&alr=yes` onto a stream URL and, in doing so,
+// descrambles the signature and the `n` throttle through its internal cipher VM.
+// We find that function by its universal `("alr","yes")` fingerprint, build a URL
+// through it, set `n`, trigger its sign method, and read the transformed `s`/`n`
+// back out — exactly what the browser does. No per-player pattern; handles
+// families the static descramble can't. (Same idea as yt-dlp's yt.solver.core.js.)
+
+// Locate the URL decorator: the function whose body stamps `("alr","yes")` on a
+// freshly-wrapped URL object. Cached on the assets (stable per player build).
+function decoratorName(assets: PlayerAssets): string | null {
+  if (assets.decorator !== undefined) return assets.decorator;
+  const at = assets.baseJs.search(/"alr"\s*,\s*"yes"/);
+  const head =
+    at < 0
+      ? null
+      : [...assets.baseJs.slice(0, at).matchAll(/\b([A-Za-z0-9$_]+)=function\(/g)].pop();
+  assets.decorator = head ? head[1] : null;
+  return assets.decorator;
+}
+
+// Drive the player's decorator to descramble `s` (the signatureCipher signature)
+// and `nIn` (the throttle param) the way the player itself does: construct the URL
+// with the raw signature, set `n`, invoke the one prototype method that isn't a
+// plain accessor (the sign step that runs the cipher VM), then read the transformed
+// values back. Returns null if the decorator can't be driven (older player without
+// this structure). evT bounds it so a misfire can't hang the process.
+function solveViaDecorator(
+  assets: PlayerAssets,
+  dec: string,
+  s: string,
+  nIn: string | null
+): { sig: string; n: string | null } | null {
+  const expr =
+    `(function(){` +
+    `var u=${dec}("https://youtube.com/watch?v=yt-dlp-wins","s",encodeURIComponent(${JSON.stringify(s)}));` +
+    (nIn ? `u.set("n",${JSON.stringify(nIn)});` : ``) +
+    `var p=Object.getPrototypeOf(u),ks=Object.keys(p).concat(Object.getOwnPropertyNames(p));` +
+    `for(var i=0;i<ks.length;i++){var k=ks[i];if(["constructor","set","get","clone"].indexOf(k)<0){u[k]();break}}` +
+    `var ss=u.get("s");return {sig:ss?decodeURIComponent(ss):null,n:u.get("n")}` +
+    `})()`;
+  const out = assets.portal.evT(expr, 3000);
+  if (!out || typeof out.sig !== "string") return null;
+  return { sig: out.sig, n: typeof out.n === "string" ? out.n : null };
+}
+
+// Confirm a resolved URL actually streams: a Range probe that returns 2xx means
+// the signature and `n` are both correct; 403 means at least one is wrong. This is
+// the ground-truth oracle that lets us verify a descramble instead of trusting it
+// — so we never hand the player a dead URL again.
+async function streamsOk(url: string): Promise<boolean> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 7000);
+  try {
+    const r = await fetch(url, { headers: { Range: "bytes=0-1" }, signal: ctrl.signal });
+    if (r.body) await r.body.cancel().catch(() => {});
+    return r.status === 200 || r.status === 206;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function buildUrl(baseUrl: string, sp: string, sig: string, n: string | null): string {
+  const u = new URL(baseUrl);
+  u.searchParams.set(sp, sig);
+  if (n) u.searchParams.set("n", n);
+  return u.toString();
+}
+
+// Turn a player audio format into a ready-to-stream URL. Preferred path: drive the
+// player's own URL decorator (universal — handles cipher-VM players). Fallback: the
+// static signatureCipher descramble (older single-arg / nested-int players). The
+// decorator strategy is verified against googlevideo once per player, then trusted.
+async function resolvedUrl(fmt: any, assets: PlayerAssets): Promise<string> {
+  if (fmt.url) return fmt.url;
+  const cipher = new URLSearchParams(fmt.signatureCipher);
+  const baseUrl = cipher.get("url");
+  if (!baseUrl) throw new Error("no url/signatureCipher");
+  const sp = cipher.get("sp") || "sig";
+  const s = cipher.get("s");
+  if (!s) throw new Error("no signature in cipher");
+  const nIn = new URL(baseUrl).searchParams.get("n");
+
+  // Primary: the player's own decorator (drives its cipher VM for both sig and n).
+  const dec = decoratorName(assets);
+  if (dec && assets.decoratorOk !== false) {
+    const sol = solveViaDecorator(assets, dec, s, nIn);
+    const url = sol && sol.sig && (!nIn || sol.n) ? buildUrl(baseUrl, sp, sol.sig, sol.n) : null;
+    if (url && assets.decoratorOk) return url; // already verified for this player build
+    if (url && (await streamsOk(url))) {
+      assets.decoratorOk = true;
+      return url;
+    }
+    // Disable only on the FIRST determination, so a single transient miss can't
+    // knock out a decorator that has already proven itself for this player.
+    if (assets.decoratorOk === undefined) assets.decoratorOk = false;
+  }
+
+  // Fallback: static descramble (throws when it can't solve — caller then drops to
+  // the standard ANDROID_VR audio path).
+  const { sig, n } = descramble(assets.baseJs, assets.portal, s, nIn);
+  const url = buildUrl(baseUrl, sp, sig, n);
+  if (await streamsOk(url)) return url;
+  throw new Error("premium: descrambled URL rejected by googlevideo");
 }
 
 // ---- public API ------------------------------------------------------------
@@ -439,40 +650,40 @@ export async function resolvePremiumAudio(videoId: string): Promise<AudioFormat>
     throw new Error(`premium: ${player?.playabilityStatus?.reason || status}`);
   const fmt = pickPremium(player);
   if (!fmt) throw new Error("no premium format (itag 141/774)");
-
-  let url: string | undefined = fmt.url;
-  if (!url) {
-    const cipher = new URLSearchParams(fmt.signatureCipher);
-    const baseUrl = cipher.get("url");
-    if (!baseUrl) throw new Error("premium: no url/signatureCipher");
-    const sp = cipher.get("sp") || "sig";
-    const s = cipher.get("s");
-    if (!s) throw new Error("premium: no signature in cipher");
-    const nOrig = new URL(baseUrl).searchParams.get("n");
-    const { sig, n } = descramble(assets.baseJs, assets.portal, s, nOrig);
-    const u = new URL(baseUrl);
-    u.searchParams.set(sp, sig);
-    if (n) u.searchParams.set("n", n);
-    url = u.toString();
-  }
   return {
     itag: fmt.itag,
-    url,
+    url: await resolvedUrl(fmt, assets),
     mimeType: fmt.mimeType,
     bitrate: fmt.bitrate ?? 0,
     contentLength: fmt.contentLength,
   };
 }
 
-// "Audioqualität" details for the premium format (no descrambling needed — we
-// only read metadata). Throws when there's no premium format.
-export async function premiumStreamInfo(videoId: string): Promise<StreamInfo> {
-  const { player } = await getPlayer(videoId);
+// Resolve a direct audio URL via the *authenticated* WEB_REMIX web player, as a
+// fallback when the anonymous ANDROID_VR path (innertube.ts `resolveAudio`) is
+// blocked — most notably age-restricted videos ("Sign in to confirm your age")
+// and bot-walled requests, which ANDROID_VR refuses with LOGIN_REQUIRED and no
+// formats. Being signed in, this player returns full formats; we descramble the
+// signatureCipher exactly as the premium path does. Honors `hq` for the tier.
+export async function resolveAuthedAudio(videoId: string, hq: boolean): Promise<AudioFormat> {
+  const { player, assets } = await getPlayer(videoId);
   const status = player?.playabilityStatus?.status;
   if (status !== "OK")
-    throw new Error(`premium: ${player?.playabilityStatus?.reason || status}`);
-  const f = pickPremium(player);
-  if (!f) throw new Error("no premium format (itag 141/774)");
+    throw new Error(`authed: ${player?.playabilityStatus?.reason || status}`);
+  const fmt = pickAudio(player, hq);
+  if (!fmt) throw new Error("authed: no audio format");
+  return {
+    itag: fmt.itag,
+    url: await resolvedUrl(fmt, assets),
+    mimeType: fmt.mimeType,
+    bitrate: fmt.bitrate ?? 0,
+    contentLength: fmt.contentLength,
+  };
+}
+
+// Build "Audioqualität" / stats-for-nerds details from a chosen format (no
+// descrambling needed — we only read metadata).
+function buildStreamInfo(videoId: string, player: any, f: any): StreamInfo {
   const mime: string = f.mimeType ?? "";
   const container = mime.split(";")[0]?.split("/")[1] ?? null;
   const codec = /codecs="([^"]+)"/.exec(mime)?.[1] ?? null;
@@ -489,4 +700,34 @@ export async function premiumStreamInfo(videoId: string): Promise<StreamInfo> {
     loudnessDb: player?.playerConfig?.audioConfig?.loudnessDb ?? null,
     client: "WEB_REMIX",
   };
+}
+
+// "Audioqualität" details for the premium format. Throws when there's none — or
+// when the premium stream can't actually be resolved (e.g. an n-driver we can't
+// verify), so the caller falls back to the standard stats and the indicator
+// reflects what's *really* playing instead of claiming 256k over a fallback.
+export async function premiumStreamInfo(videoId: string): Promise<StreamInfo> {
+  const { player, assets } = await getPlayer(videoId);
+  const status = player?.playabilityStatus?.status;
+  if (status !== "OK")
+    throw new Error(`premium: ${player?.playabilityStatus?.reason || status}`);
+  const f = pickPremium(player);
+  if (!f) throw new Error("no premium format (itag 141/774)");
+  // Gate on a real, verified resolution (descramble + googlevideo oracle) — the
+  // same path the stream takes — so stats never diverge from playback.
+  await resolvedUrl(f, assets);
+  return buildStreamInfo(videoId, player, f);
+}
+
+// Stats for the format the authenticated web player serves for the requested
+// tier — used when the anonymous ANDROID_VR stats path is blocked (age-gated /
+// login-required), mirroring resolveAuthedAudio's format selection.
+export async function authedStreamInfo(videoId: string, hq: boolean): Promise<StreamInfo> {
+  const { player } = await getPlayer(videoId);
+  const status = player?.playabilityStatus?.status;
+  if (status !== "OK")
+    throw new Error(`authed: ${player?.playabilityStatus?.reason || status}`);
+  const f = pickAudio(player, hq);
+  if (!f) throw new Error("authed: no audio format");
+  return buildStreamInfo(videoId, player, f);
 }
