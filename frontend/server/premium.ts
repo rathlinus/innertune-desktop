@@ -42,9 +42,9 @@ interface PlayerAssets {
   // The player's media-URL decorator function name (found once via the
   // `("alr","yes")` fingerprint); null when this player has no such function.
   decorator?: string | null;
-  // Whether driving that decorator produced a googlevideo-verified URL. Cached so
-  // we verify once per player build, then trust it (true) or fall straight through
-  // to the static-descramble fallback (false).
+  // Set true once driving the decorator produces a googlevideo-verified URL, so we
+  // verify only once per player build and trust it thereafter. Never set false: a
+  // transient probe miss must not disable a decorator shared by both resolvers.
   decoratorOk?: boolean;
 }
 
@@ -615,26 +615,35 @@ async function resolvedUrl(fmt: any, assets: PlayerAssets): Promise<string> {
   const nIn = new URL(baseUrl).searchParams.get("n");
 
   // Primary: the player's own decorator (drives its cipher VM for both sig and n).
+  // It's correct by construction, so we trust it; we only probe googlevideo ONCE
+  // per player to catch a mis-matched fingerprint, and we never cache a *negative*
+  // verdict — a transient probe failure must not knock out a working decorator
+  // (it's shared across the premium and authed resolvers via the assets cache).
   const dec = decoratorName(assets);
-  if (dec && assets.decoratorOk !== false) {
+  let decUrl: string | null = null;
+  if (dec) {
     const sol = solveViaDecorator(assets, dec, s, nIn);
-    const url = sol && sol.sig && (!nIn || sol.n) ? buildUrl(baseUrl, sp, sol.sig, sol.n) : null;
-    if (url && assets.decoratorOk) return url; // already verified for this player build
-    if (url && (await streamsOk(url))) {
-      assets.decoratorOk = true;
-      return url;
+    if (sol && sol.sig && (!nIn || sol.n)) {
+      decUrl = buildUrl(baseUrl, sp, sol.sig, sol.n);
+      if (assets.decoratorOk) return decUrl; // already verified for this player build
+      if (await streamsOk(decUrl)) {
+        assets.decoratorOk = true;
+        return decUrl;
+      }
     }
-    // Disable only on the FIRST determination, so a single transient miss can't
-    // knock out a decorator that has already proven itself for this player.
-    if (assets.decoratorOk === undefined) assets.decoratorOk = false;
   }
 
-  // Fallback: static descramble (throws when it can't solve — caller then drops to
-  // the standard ANDROID_VR audio path).
-  const { sig, n } = descramble(assets.baseJs, assets.portal, s, nIn);
-  const url = buildUrl(baseUrl, sp, sig, n);
-  if (await streamsOk(url)) return url;
-  throw new Error("premium: descrambled URL rejected by googlevideo");
+  // Fallback: static descramble (older single-arg / nested-int players). Throws on
+  // a cipher-VM player it can't solve — in which case fall back to the decorator
+  // URL (best-effort) rather than failing the whole request, so a flaky one-time
+  // verification can never turn into a 502.
+  try {
+    const { sig, n } = descramble(assets.baseJs, assets.portal, s, nIn);
+    return buildUrl(baseUrl, sp, sig, n);
+  } catch (e) {
+    if (decUrl) return decUrl;
+    throw e;
+  }
 }
 
 // ---- public API ------------------------------------------------------------
