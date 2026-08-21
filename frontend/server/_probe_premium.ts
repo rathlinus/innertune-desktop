@@ -638,14 +638,16 @@ async function resolvedUrl(fmt: any, assets: PlayerAssets): Promise<string> {
   // per player to catch a mis-matched fingerprint, and we never cache a *negative*
   // verdict — a transient probe failure must not knock out a working decorator
   // (it's shared across the premium and authed resolvers via the assets cache).
-  const dec = decoratorName(assets);
+  const dec = decoratorName(assets); console.log("  [dbg] decorator:", dec);
   let decUrl: string | null = null;
   if (dec) {
     const sol = solveViaDecorator(assets, dec, s, nIn);
+    console.log("  [dbg] sol:", JSON.stringify(sol)?.slice(0,120), "nIn?", !!nIn);
     if (sol && sol.sig && (!nIn || sol.n)) {
       decUrl = buildUrl(baseUrl, sp, sol.sig, sol.n);
       if (assets.decoratorOk) return decUrl; // already verified for this player build
       if (await streamsOk(decUrl)) {
+        console.log("  [dbg] decorator VERIFIED");
         assets.decoratorOk = true;
         return decUrl;
       }
@@ -657,6 +659,7 @@ async function resolvedUrl(fmt: any, assets: PlayerAssets): Promise<string> {
   // URL (best-effort) rather than failing the whole request, so a flaky one-time
   // verification can never turn into a 502.
   try {
+    console.log("  [dbg] falling back to static descramble");
     const { sig, n } = descramble(assets.baseJs, assets.portal, s, nIn);
     return buildUrl(baseUrl, sp, sig, n);
   } catch (e) {

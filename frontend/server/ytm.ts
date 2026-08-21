@@ -436,15 +436,16 @@ export async function streamInfo(videoId: string, hq = false): Promise<StreamInf
     try {
       return await premiumStreamInfo(videoId);
     } catch {
-      /* fall back to the standard ANDROID_VR format details */
+      /* fall back to the standard format details */
     }
   }
   try {
-    return await playerStreamInfo(videoId);
+    // Mirrors stream.ts `resolveFormat`: the authenticated web player is what
+    // actually feeds playback, so read the stats off it or they would describe a
+    // format nobody is listening to.
+    return await authedStreamInfo(videoId, hq);
   } catch {
-    // Anonymous ANDROID_VR is blocked (age-gated / login-required); read the
-    // stats off the authenticated web player instead, matching playback.
-    return authedStreamInfo(videoId, hq);
+    return playerStreamInfo(videoId);
   }
 }
 

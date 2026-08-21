@@ -31,17 +31,34 @@ const WEB_UA =
 const ANDROID_VR_NAME = 28;
 const ANDROID_VR = {
   clientName: "ANDROID_VR",
-  clientVersion: "1.62.27",
   deviceMake: "Oculus",
   deviceModel: "Quest 3",
   androidSdkVersion: 32,
   osName: "Android",
   osVersion: "12",
-  userAgent:
-    "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12; eureka-user Build/SQ3A.220605.009.A1) gzip",
   hl: "en",
   gl: "US",
 };
+
+// The VR app version we claim, and the reason this is a *list* rather than a
+// constant: YouTube polices the range from both ends and moves it.
+//   - Too old  -> the request is bot-walled ("Sign in to confirm you're not a
+//                 bot", zero formats). 1.62.27 — the version this client shipped
+//                 with — crossed that line and broke all playback.
+//   - Too new  -> the server assumes the client runs the JS player, so the audio
+//                 formats come back *without* a ready `url` (nothing to stream
+//                 without descrambling, which is the whole point of this path).
+// So we negotiate at runtime: newest first, take the first version that returns
+// audio with a real `url`, and remember it for subsequent calls. A future
+// minimum-version bump then self-heals instead of silently killing audio.
+const ANDROID_VR_VERSIONS = ["1.68.10", "1.66.10", "1.65.10", "1.64.10"];
+
+// The version that last produced ready-to-stream URLs (probed lazily).
+let vrVersion: string | null = null;
+
+function vrUserAgent(version: string): string {
+  return `com.google.android.apps.youtube.vr.oculus/${version} (Linux; U; Android 12; eureka-user Build/SQ3A.220605.009.A1) gzip`;
+}
 
 function cookieValue(cookie: string, name: string): string | null {
   const m = cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
@@ -281,9 +298,19 @@ export async function uploadSong(filePath: string): Promise<boolean> {
 // 8/8 on repeat); WITH cookies the request is rejected. So: visitorData yes,
 // cookies no. This is why the metadata (cookie auth) and audio (visitorData only)
 // paths stay separate.
-export async function callPlayer<T = any>(videoId: string): Promise<T> {
+//
+// The second catch: the claimed app version matters as much as the visitorData —
+// see ANDROID_VR_VERSIONS above. `callPlayer` negotiates it instead of trusting a
+// hardcoded one.
+async function callPlayerAs(videoId: string, version: string): Promise<any> {
   const visitorData = getSession()?.visitor_data;
-  const client = visitorData ? { ...ANDROID_VR, visitorData } : ANDROID_VR;
+  const userAgent = vrUserAgent(version);
+  const client = {
+    ...ANDROID_VR,
+    clientVersion: version,
+    userAgent,
+    ...(visitorData ? { visitorData } : {}),
+  };
   const res = await fetch(`${YT_API}/player?prettyPrint=false`, {
     method: "POST",
     headers: {
@@ -292,8 +319,8 @@ export async function callPlayer<T = any>(videoId: string): Promise<T> {
       Origin: "https://www.youtube.com",
       ...(visitorData ? { "X-Goog-Visitor-Id": visitorData } : {}),
       "X-Youtube-Client-Name": String(ANDROID_VR_NAME),
-      "X-Youtube-Client-Version": ANDROID_VR.clientVersion,
-      "User-Agent": ANDROID_VR.userAgent,
+      "X-Youtube-Client-Version": version,
+      "User-Agent": userAgent,
     },
     body: JSON.stringify({
       context: { client },
@@ -306,7 +333,39 @@ export async function callPlayer<T = any>(videoId: string): Promise<T> {
   if (!res.ok) {
     throw new Error(`player ${res.status}: ${await res.text()}`);
   }
-  return (await res.json()) as T;
+  return res.json();
+}
+
+// Does this response carry what we came for — audio with a ready `url`? Anything
+// else (bot wall, or a version new enough that the server withholds URLs) means
+// we should try another client version.
+function hasReadyAudio(pr: any): boolean {
+  return (pr?.streamingData?.adaptiveFormats ?? []).some(
+    (f: any) => f.url && typeof f.mimeType === "string" && f.mimeType.includes("audio")
+  );
+}
+
+export async function callPlayer<T = any>(videoId: string): Promise<T> {
+  // Try the remembered-good version first, then the rest newest-first.
+  const order = vrVersion
+    ? [vrVersion, ...ANDROID_VR_VERSIONS.filter((v) => v !== vrVersion)]
+    : ANDROID_VR_VERSIONS;
+  let last: any = null;
+  for (const version of order) {
+    const pr = await callPlayerAs(videoId, version);
+    if (hasReadyAudio(pr)) {
+      vrVersion = version;
+      return pr as T;
+    }
+    last = pr;
+    // A genuine verdict on the *video* (age-gate, private, region block) will be
+    // the same for every version — only keep probing when the refusal looks like
+    // it is about the client we claim to be.
+    const status = pr?.playabilityStatus?.status;
+    if (status && status !== "OK" && status !== "LOGIN_REQUIRED") break;
+  }
+  // Hand the last response back so the caller can surface the real reason.
+  return last as T;
 }
 
 export interface AudioFormat {
