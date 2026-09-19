@@ -6,7 +6,8 @@
 // active one (isSelected) and cache it briefly (keyed on the captured session so
 // a re-login or logout invalidates it).
 
-import { getSession } from "./chrome";
+import { getSession, markSessionExpired } from "./chrome";
+import { NotAuthedError } from "./innertube";
 
 export interface Account {
   name: string | null;
@@ -49,6 +50,13 @@ export async function account(): Promise<Account> {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
     },
   });
+  // Dead cookies don't get an error: Google 302s to accounts.google.com and
+  // serves the sign-in page (HTML, 200). Report that as "signed out" so the UI
+  // prompts for a fresh capture, instead of choking on the HTML with a 500.
+  if (res.redirected || !(res.headers.get("content-type") ?? "").includes("json")) {
+    markSessionExpired();
+    throw new NotAuthedError();
+  }
   if (!res.ok) return EMPTY;
 
   // The body is JSON guarded by an anti-JSON-hijack prefix — strip it.

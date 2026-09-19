@@ -49,10 +49,15 @@ async function main() {
   //    package.json "build"; we only pick the targets/arches here.
   console.log("\n[3/3] electron-builder");
   const { build: ebuild, Platform, Arch } = await import("electron-builder");
+  //    `--arch=x64` (or arm64) builds just that one, e.g. for a quick local
+  //    install (scripts/update-local.mjs); the default is both, for releases.
+  const archArg = process.argv.find((a) => a.startsWith("--arch="))?.slice("--arch=".length);
+  const arches = archArg ? [Arch[archArg]] : [Arch.x64, Arch.arm64];
+  if (arches.some((a) => a === undefined)) throw new Error(`unknown --arch=${archArg}`);
   const targets =
     process.platform === "win32"
-      ? Platform.WINDOWS.createTarget(["nsis"], Arch.x64, Arch.arm64)
-      : Platform.LINUX.createTarget(["AppImage"], Arch.x64, Arch.arm64);
+      ? Platform.WINDOWS.createTarget(["nsis"], ...arches)
+      : Platform.LINUX.createTarget(["AppImage"], ...arches);
   // Don't let electron-builder publish: the workflow attaches the installers to
   // the GitHub Release itself. Without this, a git tag triggers electron-builder's
   // implicit publish, which fails trying to resolve a GitHub publish config.

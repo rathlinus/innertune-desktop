@@ -15,7 +15,7 @@
 // resolveAudio below.
 
 import { createHash } from "node:crypto";
-import { getSession } from "./chrome";
+import { getSession, markSessionExpired } from "./chrome";
 
 const MUSIC_ORIGIN = "https://music.youtube.com";
 const MUSIC_API = `${MUSIC_ORIGIN}/youtubei/v1`;
@@ -102,6 +102,27 @@ export class NotAuthedError extends Error {
   }
 }
 
+// InnerTube answers a request made with dead cookies exactly like an anonymous
+// one: HTTP 200, but the response context's GFEEDBACK tracking params carry
+// logged_in=0 (a live session reports 1). That is the only reliable tell, so
+// every cookie'd call runs its JSON through here and flips the session to
+// "expired" the moment Google stops honouring it.
+interface TrackingService {
+  service?: string;
+  params?: { key?: string; value?: string }[];
+}
+export function assertLoggedIn(j: unknown): void {
+  const rc = (j as { responseContext?: { serviceTrackingParams?: TrackingService[] } } | null)
+    ?.responseContext;
+  const params =
+    rc?.serviceTrackingParams?.find((p) => p?.service === "GFEEDBACK")?.params ?? [];
+  const v = params.find((p) => p?.key === "logged_in")?.value;
+  if (v === "0") {
+    markSessionExpired();
+    throw new NotAuthedError();
+  }
+}
+
 // Authenticated WEB_REMIX call. `endpoint` is e.g. "browse" | "search" | "next".
 export async function callMusic<T = any>(
   endpoint: string,
@@ -136,7 +157,9 @@ export async function callMusic<T = any>(
   if (!res.ok) {
     throw new Error(`InnerTube ${endpoint} ${res.status}: ${await res.text()}`);
   }
-  return (await res.json()) as T;
+  const j = await res.json();
+  assertLoggedIn(j);
+  return j as T;
 }
 
 // get_song — track metadata from the WEB_REMIX player. We only read

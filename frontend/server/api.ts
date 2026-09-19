@@ -55,6 +55,7 @@ import {
   deleteUploadEntity,
   uploadSong,
   streamInfo,
+  videoCounterpart,
   subscribe,
   createPlaylist,
   deletePlaylist,
@@ -63,11 +64,12 @@ import {
   movePlaylistItem,
   renamePlaylist,
 } from "./ytm";
-import { streamAudio, downloadAudio } from "./stream";
+import { streamAudio, downloadAudio, streamVideo } from "./stream";
 import { NotAuthedError } from "./innertube";
 import {
   startLogin,
   isAuthenticated,
+  isSessionExpired,
   getLoginState,
   logout,
 } from "./chrome";
@@ -107,6 +109,15 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
     const hq = url.searchParams.get("hq") === "1";
     if (route.startsWith("/stream/")) {
       await streamAudio(decodeURIComponent(route.slice("/stream/".length)), req, res, hq);
+      return true;
+    }
+    if (route.startsWith("/video/")) {
+      await streamVideo(decodeURIComponent(route.slice("/video/".length)), req, res);
+      return true;
+    }
+    if (route.startsWith("/video-info/") && method === "GET") {
+      const id = decodeURIComponent(route.slice("/video-info/".length));
+      sendJson(res, 200, await videoCounterpart(id));
       return true;
     }
     if (route.startsWith("/download/") && method === "GET") {
@@ -270,6 +281,8 @@ export async function handle(req: IncomingMessage, res: ServerResponse): Promise
     if (route === "/auth/status") {
       sendJson(res, 200, {
         authenticated: isAuthenticated(),
+        // True when a session exists but Google stopped accepting it.
+        expired: isSessionExpired(),
         login: getLoginState(),
       });
       return true;

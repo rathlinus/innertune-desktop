@@ -18,6 +18,7 @@ import { startServer, type ServeHandle } from "../server/serve";
 import { attachTaskbar } from "./taskbar";
 import { attachTray, type TrayHandle } from "./tray";
 import { loadWindowState, manageWindowState } from "./window-state";
+import { loadServerPort, saveServerPort } from "./server-port";
 import { DiscordPresence, type PlaybackInfo } from "./discord";
 
 let serveHandle: ServeHandle | null = null;
@@ -57,7 +58,17 @@ function iconFile(): string {
 async function resolveUrl(): Promise<string> {
   const devServer = process.env.YTM_DEV_SERVER;
   if (devServer) return devServer;
-  serveHandle = await startServer({ host: "127.0.0.1", port: 0, distDir: distDir() });
+  // A stable port keeps the renderer's origin — and so its localStorage — the
+  // same across launches (see server-port.ts).
+  const saved = loadServerPort();
+  const start = (port: number) => startServer({ host: "127.0.0.1", port, distDir: distDir() });
+  try {
+    serveHandle = await start(saved ?? 0);
+  } catch (e) {
+    if (saved == null) throw e;
+    serveHandle = await start(0); // saved port is taken — take any free one
+  }
+  saveServerPort(serveHandle.port); // also persists a port recovered from storage
   return serveHandle.url;
 }
 

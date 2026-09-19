@@ -29,6 +29,7 @@ import { Home } from "./Home";
 import { CardGrid } from "./CardGrid";
 import { SearchResults } from "./SearchResults";
 import { ArtistView } from "./ArtistView";
+import { OpenArtistContext } from "./artistNav";
 import { AlbumView } from "./AlbumView";
 import { LibraryView } from "./LibraryView";
 import { HistoryView } from "./HistoryView";
@@ -101,10 +102,39 @@ type View =
 
 export default function App() {
   const { settings, set: setSetting } = useSettings();
+  const [authed, setAuthed] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  // Set when playback died because the session expired, so a successful
+  // re-login resumes the track the user was trying to hear.
+  const resumeAfterLoginRef = useRef(false);
+
+  const refreshAuth = useCallback(async () => {
+    try {
+      const s = await getAuthStatus();
+      setAuthed(s.authenticated);
+      return s.authenticated;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // A stream that fails outright is, in practice, an expired session: Google
+  // stops honouring the captured cookies after a while and the server then
+  // answers 401. Confirm with the server and prompt for a fresh sign-in instead
+  // of leaving the user with a track that stops after a second.
+  const onPlaybackError = useCallback(async () => {
+    const ok = await refreshAuth();
+    if (!ok) {
+      resumeAfterLoginRef.current = true;
+      setShowLogin(true);
+    }
+  }, [refreshAuth]);
+
   const player = usePlayer({
     volumeCurve: settings.volumeCurve,
     resumePlayback: settings.resumePlayback,
     highQuality: settings.highQuality,
+    onError: onPlaybackError,
   });
   // Keep the OS "launch at login" item in lockstep with the stored preference:
   // pushed on startup (in case the user disabled it elsewhere) and on every
@@ -130,10 +160,8 @@ export default function App() {
   const [gridCards, setGridCards] = useState<HomeCard[] | null>(null);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [collapsed, setCollapsed] = useState(false);
-  const [authed, setAuthed] = useState(false);
   const [account, setAccount] = useState<Account | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [showLogin, setShowLogin] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [fsMounted, setFsMounted] = useState(false);
 
@@ -175,16 +203,6 @@ export default function App() {
   const showToast = useCallback((msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 2600);
-  }, []);
-
-  const refreshAuth = useCallback(async () => {
-    try {
-      const s = await getAuthStatus();
-      setAuthed(s.authenticated);
-      return s.authenticated;
-    } catch {
-      return false;
-    }
   }, []);
 
   // Sidebar playlist list. Loaded once signed in and refreshed after any
@@ -337,7 +355,7 @@ export default function App() {
   const skipNext = player.next;
   const wasAutoAdvanced = player.wasAutoAdvanced;
 
-  // Play from a finite list (search/album/playlist): the list is the queue, and
+  // Play from a finite list (album/playlist): the list is the queue, and
   // radio is seeded automatically once it nears its end (watcher below).
   const playTrack = useCallback(
     (t: Track, queue: Track[]) => {
@@ -360,6 +378,18 @@ export default function App() {
       }
       try {
         const up = await getRadio(t.videoId);
+        // The radio's first entry is the seed itself, with a proper byline
+        // (per-artist links) — cards/search only gave us a loose subtitle.
+        const self = up.tracks.find((x) => x.videoId === t.videoId);
+        if (self?.artists?.length) {
+          player.updateTrack(t.videoId, {
+            artist: self.artist,
+            artists: self.artists,
+            duration: t.duration ?? self.duration,
+            durationSeconds: t.durationSeconds ?? self.durationSeconds,
+            channelId: t.channelId ?? self.channelId,
+          });
+        }
         if (up.tracks.length) {
           // Append the radio tracks to the live queue rather than calling
           // player.play() again — re-playing the same track would reassign
@@ -438,7 +468,8 @@ export default function App() {
       void playRadio({
         videoId: card.videoId,
         title: card.title ?? "",
-        artist: card.subtitle ?? "",
+        artist: card.artists?.length ? card.artists.map((a) => a.name).join(", ") : card.subtitle ?? "",
+        artists: card.artists,
         album: null,
         duration: null,
         durationSeconds: null,
@@ -599,7 +630,8 @@ export default function App() {
           track: {
             videoId: card.videoId,
             title: card.title ?? "",
-            artist: card.subtitle ?? "",
+            artist: card.artists?.length ? card.artists.map((a) => a.name).join(", ") : card.subtitle ?? "",
+            artists: card.artists,
             album: null,
             duration: null,
             durationSeconds: null,
@@ -706,7 +738,14 @@ export default function App() {
   async function onLoginSuccess() {
     setShowLogin(false);
     const ok = await refreshAuth();
-    if (ok) openLibrary();
+    if (!ok) return;
+    if (resumeAfterLoginRef.current) {
+      // Playback was interrupted by the expired session — pick it back up.
+      resumeAfterLoginRef.current = false;
+      if (player.state.index >= 0) player.playAt(player.state.index);
+      return;
+    }
+    openLibrary();
   }
   async function onLogout() {
     setAccountOpen(false);
@@ -722,7 +761,14 @@ export default function App() {
     : searchHistory;
   const shownSuggest = suggestions.filter((s) => s.toLowerCase() !== qlc).slice(0, 8);
 
+  // A clicked artist byline anywhere (player bar, fullscreen, queue, lists).
+  const openArtistFromByline = (browseId: string) => {
+    setFullscreen(false);
+    openArtist(browseId);
+  };
+
   return (
+    <OpenArtistContext.Provider value={openArtistFromByline}>
     <div
       className={`app ${collapsed ? "collapsed" : ""} ${SHELL_CLASS} ${
         player.state.current && !player.state.isPlaying ? "paused" : ""
@@ -906,7 +952,8 @@ export default function App() {
           <SearchResults
             query={searchQuery}
             nowId={nowId}
-            onPlay={playTrack}
+            // Like YT Music: a search hit starts that song's radio, not the result list.
+            onPlay={(t) => void playRadio(t)}
             onOpenArtist={openArtist}
             onOpenAlbum={openAlbum}
             onOpenPlaylist={(id, title) => void openPlaylist(id, title)}
@@ -1023,6 +1070,7 @@ export default function App() {
           state={player.state}
           onClose={() => setFullscreen(false)}
           onToggle={player.toggle}
+          getCurrentTime={player.getCurrentTime}
           onPlayAt={player.playAt}
           onPlay={playTrack}
           onMove={player.moveInQueue}
@@ -1106,5 +1154,6 @@ export default function App() {
 
       {toast && <div className="toast">{toast}</div>}
     </div>
+    </OpenArtistContext.Provider>
   );
 }

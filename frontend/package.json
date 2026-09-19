@@ -15,6 +15,7 @@
     "build": "tsc -b && vite build",
     "build:exe": "node scripts/build-exe.mjs",
     "build:electron": "node scripts/build-electron.mjs",
+    "update:local": "node scripts/update-local.mjs",
     "electron:dev": "node scripts/electron-dev.mjs",
     "lint": "eslint .",
     "preview": "vite preview"

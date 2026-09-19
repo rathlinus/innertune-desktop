@@ -13,6 +13,9 @@ export interface PlayerOptions {
   // Request the premium itag-141 stream. Read at track-load time, so toggling it
   // in Settings takes effect on the next track (not the one already playing).
   highQuality?: boolean;
+  // Called when the <audio> element gives up on a track (the stream answered
+  // 401/403 or the data failed to decode). Read live, like the other options.
+  onError?: () => void;
 }
 
 export type RepeatMode = "off" | "all" | "one";
@@ -99,6 +102,7 @@ export function usePlayer(options: PlayerOptions = {}) {
   // latest value at track-load time without re-subscribing. Synced by the effect
   // below (refs must not be written during render).
   const hqRef = useRef<boolean>(options.highQuality ?? DEFAULTS.highQuality);
+  const onErrorRef = useRef<(() => void) | undefined>(options.onError);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   if (!audioRef.current) {
@@ -224,6 +228,22 @@ export function usePlayer(options: PlayerOptions = {}) {
       persist();
     },
     [patch, persist]
+  );
+
+  // Patch a queued track's metadata in place (e.g. a radio seed that only had a
+  // card subtitle gets its real byline once the radio loads). Playback untouched.
+  const updateTrack = useCallback(
+    (videoId: string, fields: Partial<Track>) => {
+      if (!queueRef.current.some((t) => t.videoId === videoId)) return;
+      queueRef.current = queueRef.current.map((t) => (t.videoId === videoId ? { ...t, ...fields } : t));
+      setState((s) => ({
+        ...s,
+        queue: queueRef.current,
+        current: s.current?.videoId === videoId ? { ...s.current, ...fields } : s.current,
+      }));
+      persist();
+    },
+    [persist]
   );
 
   // "Als Nächstes abspielen" — insert one or more tracks right after the current
@@ -407,6 +427,10 @@ export function usePlayer(options: PlayerOptions = {}) {
     hqRef.current = options.highQuality ?? DEFAULTS.highQuality;
   }, [options.highQuality]);
 
+  useEffect(() => {
+    onErrorRef.current = options.onError;
+  }, [options.onError]);
+
   // Restore the audio element on first mount: apply the saved volume and queue
   // up the last track (paused — browsers block autoplay without a gesture).
   useEffect(() => {
@@ -458,6 +482,7 @@ export function usePlayer(options: PlayerOptions = {}) {
     const onError = () => {
       // A track failed to resolve/decode. Don't hang on the spinner.
       patch({ loading: false, isPlaying: false });
+      onErrorRef.current?.();
     };
 
     audio.addEventListener("play", onPlay);
@@ -512,6 +537,7 @@ export function usePlayer(options: PlayerOptions = {}) {
     play,
     playAt: playIndex,
     seedQueue,
+    updateTrack,
     appendQueue,
     playNext,
     enqueue,

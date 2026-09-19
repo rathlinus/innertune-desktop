@@ -27,6 +27,7 @@ import {
   parseArtist,
   parseAlbum,
   parseQueue,
+  parseCounterpart,
   parseRelated,
   parseHistory,
   parseGrid,
@@ -45,6 +46,7 @@ import {
   type ArtistPage,
   type AlbumPage,
   type UpNext,
+  type VideoCounterpart,
   type HistorySection,
   type ArtistCard,
   type GridPage,
@@ -221,7 +223,7 @@ export async function artist(browseId: string): Promise<ArtistPage> {
 }
 
 export async function album(browseId: string): Promise<AlbumPage> {
-  return parseAlbum(await callMusic("browse", { browseId }));
+  return parseAlbum(await callMusic("browse", { browseId }), browseId);
 }
 
 // The full albums/singles/videos grid behind an artist carousel's "Mehr
@@ -285,6 +287,13 @@ export async function upNext(videoId: string, playlistId?: string): Promise<UpNe
   const body: Record<string, unknown> = { videoId };
   if (playlistId) body.playlistId = playlistId;
   return parseQueue(await callMusic("next", body));
+}
+
+// The music video behind a track, for the "Titel / Video" toggle: the track
+// itself when it is a video, else its OMV counterpart and the song↔video
+// timeline map (see parseCounterpart).
+export async function videoCounterpart(videoId: string): Promise<VideoCounterpart> {
+  return parseCounterpart(await callMusic("next", { videoId }), videoId);
 }
 
 export async function related(browseId: string): Promise<{ tracks: Track[]; shelves: Shelf[] }> {

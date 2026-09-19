@@ -17,15 +17,21 @@
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { resolveAudio, type AudioFormat } from "./innertube";
-import { resolvePremiumAudio, resolveAuthedAudio } from "./premium";
+import { resolveAudio, NotAuthedError, type AudioFormat } from "./innertube";
+import { resolvePremiumAudio, resolveAuthedAudio, resolveAuthedVideo } from "./premium";
+import { isSessionExpired, sessionSig } from "./chrome";
 
 // Resolved URLs are short-lived signed links (the `expire` query param is hours
 // out, but be conservative); cache them briefly to avoid a player round-trip on
 // every Range request the browser makes while scrubbing. Keyed by quality, since
-// HQ and standard resolve to different formats/URLs for the same video.
+// HQ and standard resolve to different formats/URLs for the same video — and by
+// session, so a re-login never keeps serving URLs resolved under the old (dead)
+// credentials. A capped ANDROID_VR fallback URL is cached only briefly: it is a
+// stopgap taken because the authenticated path failed, and that failure is
+// usually transient or fixed by a re-login, so retry the real path soon.
 const cache = new Map<string, { url: string; expires: number }>();
 const TTL_MS = 30 * 60 * 1000;
+const FALLBACK_TTL_MS = 60 * 1000;
 
 // The largest range a capped ANDROID_VR fallback URL still serves (verified:
 // `bytes=0-1048575` → 206, one byte more → 403).
@@ -41,28 +47,54 @@ const CAPPED_CHUNK = 1 << 20;
 //   - Only if the authenticated player fails as well do we fall back to the
 //     anonymous ANDROID_VR format, which is capped at its first MiB (see the
 //     file header) but is better than nothing when there is no usable session.
-async function resolveFormat(videoId: string, hq: boolean): Promise<AudioFormat> {
+async function resolveFormat(
+  videoId: string,
+  hq: boolean
+): Promise<{ fmt: AudioFormat; fallback: boolean }> {
+  // A NotAuthedError means the web player just proved the captured session is
+  // dead (see assertLoggedIn). That is not a case for the anonymous fallback —
+  // the listener needs to sign in again — so let it surface as a 401 instead.
   if (hq) {
     try {
-      return await resolvePremiumAudio(videoId);
-    } catch {
+      return { fmt: await resolvePremiumAudio(videoId), fallback: false };
+    } catch (e) {
+      if (e instanceof NotAuthedError) throw e;
       /* fall through to the standard path */
     }
   }
   try {
-    return await resolveAuthedAudio(videoId, hq);
-  } catch {
-    return resolveAudio(videoId);
+    return { fmt: await resolveAuthedAudio(videoId, hq), fallback: false };
+  } catch (e) {
+    if (e instanceof NotAuthedError) throw e;
+    console.warn(`[stream] authed player failed for ${videoId}, using capped fallback: ${e}`);
+    return { fmt: await resolveAudio(videoId), fallback: true };
   }
 }
 
 async function resolveUrl(videoId: string, hq: boolean): Promise<string> {
-  const key = `${hq ? "hq" : "lo"}:${videoId}`;
+  const key = `${sessionSig()}:${hq ? "hq" : "lo"}:${videoId}`;
   const hit = cache.get(key);
   if (hit && hit.expires > Date.now()) return hit.url;
-  const { url } = await resolveFormat(videoId, hq);
-  cache.set(key, { url, expires: Date.now() + TTL_MS });
-  return url;
+  const { fmt, fallback } = await resolveFormat(videoId, hq);
+  cache.set(key, { url: fmt.url, expires: Date.now() + (fallback ? FALLBACK_TTL_MS : TTL_MS) });
+  return fmt.url;
+}
+
+// A captured session Google has stopped honouring gets a clear 401 rather than
+// the capped anonymous fallback (which would play for a moment and then 403).
+// The media element errors out immediately and the UI prompts for a re-login.
+function sendExpired(res: ServerResponse): void {
+  res.writeHead(401, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: "session expired - sign in again" }));
+}
+
+function sendResolveError(res: ServerResponse, e: unknown): void {
+  if (e instanceof NotAuthedError) {
+    sendExpired(res);
+    return;
+  }
+  res.writeHead(502, { "Content-Type": "application/json" });
+  res.end(JSON.stringify({ error: `resolve failed: ${e}` }));
 }
 
 // Pick a sensible file extension for a downloaded audio container.
@@ -104,12 +136,15 @@ export async function downloadAudio(
   res: ServerResponse,
   hq = false
 ): Promise<void> {
+  if (isSessionExpired()) {
+    sendExpired(res);
+    return;
+  }
   let fmt: AudioFormat;
   try {
-    fmt = await resolveFormat(videoId, hq);
+    fmt = (await resolveFormat(videoId, hq)).fmt;
   } catch (e) {
-    res.writeHead(502, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: `resolve failed: ${e}` }));
+    sendResolveError(res, e);
     return;
   }
   const upstream = await fetch(fmt.url);
@@ -139,12 +174,15 @@ export async function streamAudio(
   res: ServerResponse,
   hq = false
 ): Promise<void> {
+  if (isSessionExpired()) {
+    sendExpired(res);
+    return;
+  }
   let url: string;
   try {
     url = await resolveUrl(videoId, hq);
   } catch (e) {
-    res.writeHead(502, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: `resolve failed: ${e}` }));
+    sendResolveError(res, e);
     return;
   }
 
@@ -171,6 +209,43 @@ export async function streamAudio(
     if (v) headers[k] = v;
   }
 
+  res.writeHead(upstream.status, headers);
+  await pump(upstream.body, res);
+}
+
+// "Video" view — the video-only picture of a music video, proxied with Range
+// support for a muted <video> element the frontend keeps in sync with the audio.
+// Only the authenticated web player has video formats we can use; there is no
+// anonymous fallback, so failures surface as errors and the UI shows the cover.
+export async function streamVideo(
+  videoId: string,
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  if (isSessionExpired()) {
+    sendExpired(res);
+    return;
+  }
+  const key = `${sessionSig()}:video:${videoId}`;
+  const hit = cache.get(key);
+  let url = hit && hit.expires > Date.now() ? hit.url : null;
+  if (!url) {
+    try {
+      url = (await resolveAuthedVideo(videoId)).url;
+    } catch (e) {
+      sendResolveError(res, e);
+      return;
+    }
+    cache.set(key, { url, expires: Date.now() + TTL_MS });
+  }
+
+  const range = req.headers["range"] ? String(req.headers["range"]) : null;
+  const upstream = await fetch(url, { headers: range ? { Range: range } : {} });
+  const headers: Record<string, string> = { "Accept-Ranges": "bytes" };
+  for (const k of ["content-type", "content-length", "content-range", "accept-ranges"]) {
+    const v = upstream.headers.get(k);
+    if (v) headers[k] = v;
+  }
   res.writeHead(upstream.status, headers);
   await pump(upstream.body, res);
 }

@@ -1,4 +1,5 @@
 import type {
+  VideoCounterpart,
   Account,
   AlbumPage,
   ArtistCard,
@@ -99,6 +100,18 @@ export async function searchTracks(query: string): Promise<Track[]> {
 // standard format if premium isn't available).
 export function streamUrl(videoId: string, hq = false): string {
   return `${API_BASE}/stream/${videoId}${hq ? "?hq=1" : ""}`;
+}
+
+// "Video" view — the muted, video-only picture of a music video (the audio keeps
+// playing from streamUrl; the frontend syncs the two).
+export function videoUrl(videoId: string): string {
+  return `${API_BASE}/video/${encodeURIComponent(videoId)}`;
+}
+
+// Which video the "Titel / Video" toggle shows for a track, plus the song↔video
+// timeline map (see VideoCounterpart).
+export async function getVideoInfo(videoId: string): Promise<VideoCounterpart> {
+  return json<VideoCounterpart>(await fetch(`${API_BASE}/video-info/${encodeURIComponent(videoId)}`));
 }
 
 // "Herunterladen" — a URL that streams the audio with a Content-Disposition so

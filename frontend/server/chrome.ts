@@ -79,6 +79,15 @@ interface CdpCookie {
 
 let cached: Session | null | undefined;
 
+// Set once a request proves Google no longer accepts the captured cookies: an
+// InnerTube response flagged logged_in=0, or the account endpoint bouncing to
+// the sign-in page. Nothing on disk is touched (a re-login overwrites it), but
+// until then the app must behave as signed out so the UI prompts for a fresh
+// capture. Without this an expired session degrades *silently*: the web player
+// still answers 200 — just as an anonymous client, whose URLs googlevideo caps
+// or refuses with 403 — and playback dies a second in with no explanation.
+let expired = false;
+
 export function getSession(): Session | null {
   if (cached === undefined) {
     cached = null;
@@ -94,11 +103,29 @@ export function getSession(): Session | null {
       }
     }
   }
-  return cached;
+  return expired ? null : cached;
 }
 
 export function isAuthenticated(): boolean {
   return getSession() !== null;
+}
+
+// A session was captured but Google has since stopped honouring it.
+export function isSessionExpired(): boolean {
+  return expired && !!cached;
+}
+
+export function markSessionExpired(): void {
+  if (expired || !cached) return;
+  expired = true;
+  console.warn("[auth] captured session is no longer accepted by Google - sign in again");
+}
+
+// Identity of the current credentials, for caches whose entries only make sense
+// for the session that produced them (player responses, resolved stream URLs).
+// Changes on every capture, so a re-login invalidates them all at once.
+export function sessionSig(): number {
+  return getSession()?.capturedAt ?? 0;
 }
 
 export function cookiesTxtPath(): string | null {
@@ -107,6 +134,7 @@ export function cookiesTxtPath(): string | null {
 
 export function logout(): void {
   cached = null;
+  expired = false;
   for (const f of [sessionFile(), cookiesTxt()]) {
     try {
       if (existsSync(f)) writeFileSync(f, "");
@@ -368,6 +396,7 @@ async function capture(cookies: CdpCookie[], cfg: Ytcfg): Promise<void> {
   writeFileSync(sessionFile(), JSON.stringify(session, null, 2));
   writeFileSync(cookiesTxt(), toNetscape(cookies));
   cached = session; // invalidate the read-through cache with fresh creds
+  expired = false;
 }
 
 function delay(ms: number): Promise<void> {

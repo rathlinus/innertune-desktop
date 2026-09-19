@@ -7,10 +7,31 @@ import type { MenuCtx } from "./TrackMenu";
 import { IconCollapse, IconNote, IconPlay, IconPause, IconSearch } from "./icons";
 import { Spinner } from "./Spinner";
 import { Equalizer } from "./Equalizer";
+import { ArtistLinks } from "./ArtistLinks";
+import { VideoStage } from "./FullscreenVideo";
+import { useVideoInfo } from "./useVideoInfo";
 
-/** "artist · album", dropping any empty parts. */
-function subtitle(t: Track) {
-  return [t.artist, t.album].filter(Boolean).join(" · ");
+// The "Titel / Video" choice sticks across tracks and sessions, like on YTM.
+const MODE_KEY = "ytm.fsp.mode";
+type StageMode = "song" | "video";
+function loadMode(): StageMode {
+  try {
+    return localStorage.getItem(MODE_KEY) === "video" ? "video" : "song";
+  } catch {
+    return "song";
+  }
+}
+
+/** "artist · album", the artists linking to their pages. */
+function Subtitle({ t, extra }: { t: Track; extra?: (string | null)[] }) {
+  const rest = [t.album, ...(extra ?? [])].filter(Boolean).join(" · ");
+  const hasArtist = !!(t.artists?.length || t.artist);
+  return (
+    <>
+      <ArtistLinks track={t} />
+      {hasArtist && rest ? ` · ${rest}` : rest}
+    </>
+  );
 }
 
 /** Human-friendly codec name from an RFC 6381 codec string ("mp4a.40.2" → AAC). */
@@ -114,6 +135,8 @@ interface Props {
   // Run a search (submitted from the in-player search bar). The parent closes
   // the fullscreen player and shows the results.
   onSearch?: (term: string) => void;
+  // The audio clock, which the "Video" view follows.
+  getCurrentTime: () => number;
 }
 
 export function FullscreenPlayer({
@@ -130,6 +153,7 @@ export function FullscreenPlayer({
   highQuality,
   showSearch,
   onSearch,
+  getCurrentTime,
 }: Props) {
   const { current, isPlaying, loading, queue, index } = state;
 
@@ -142,6 +166,20 @@ export function FullscreenPlayer({
     onSearch?.(q);
     setQuery("");
   };
+
+  // "Titel / Video" toggle — only offered when the track has a music video.
+  const [mode, setModeState] = useState<StageMode>(loadMode);
+  const setMode = (m: StageMode) => {
+    setModeState(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {
+      /* not persisted — fine */
+    }
+  };
+  const videoInfo = useVideoInfo(current?.videoId);
+  const hasVideo = !!videoInfo?.videoId;
+  const showVideo = mode === "video" && hasVideo;
 
   const [tab, setTab] = useState<"next" | "lyrics" | "related" | "quality">("next");
   // If the quality tab is open and the setting gets turned off, fall back.
@@ -315,43 +353,72 @@ export function FullscreenPlayer({
 
       <div className="fsp-body">
         {/* Left: album art + meta — the focal point */}
-        <div className="fsp-stage">
-          <button
-            className="fsp-art-wrap"
-            onClick={onToggle}
-            title="Wiedergabe/Pause"
-          >
-            {current.thumbnail ? (
-              <img
-                key={current.videoId}
-                className="fsp-art fsp-art-fade"
-                src={current.thumbnail}
-                alt=""
-              />
-            ) : (
-              <div className="fsp-art fsp-art-empty">
-                <IconNote size={88} />
-              </div>
-            )}
-            <span className="fsp-art-overlay">
-              {loading ? (
-                <Spinner size={64} />
-              ) : isPlaying ? (
-                <IconPause size={64} />
+        <div className={`fsp-stage ${showVideo ? "is-video" : ""}`}>
+          {/* Always rendered (hidden without a video) so its row stays reserved
+              and the art doesn't jump when the lookup lands. */}
+          <div className={`fsp-mode ${hasVideo ? "" : "is-hidden"}`} role="tablist">
+            <button
+              role="tab"
+              aria-selected={!showVideo}
+              className={`fsp-mode-btn ${!showVideo ? "active" : ""}`}
+              onClick={() => setMode("song")}
+            >
+              Titel
+            </button>
+            <button
+              role="tab"
+              aria-selected={showVideo}
+              className={`fsp-mode-btn ${showVideo ? "active" : ""}`}
+              onClick={() => setMode("video")}
+            >
+              Video
+            </button>
+          </div>
+          {showVideo && videoInfo ? (
+            <VideoStage
+              key={videoInfo.videoId}
+              info={videoInfo}
+              thumbnail={current.thumbnail}
+              isPlaying={isPlaying}
+              getCurrentTime={getCurrentTime}
+              onToggle={onToggle}
+            />
+          ) : (
+            <button
+              className="fsp-art-wrap"
+              onClick={onToggle}
+              title="Wiedergabe/Pause"
+            >
+              {current.thumbnail ? (
+                <img
+                  key={current.videoId}
+                  className="fsp-art fsp-art-fade"
+                  src={current.thumbnail}
+                  alt=""
+                />
               ) : (
-                <IconPlay size={64} />
+                <div className="fsp-art fsp-art-empty">
+                  <IconNote size={88} />
+                </div>
               )}
-            </span>
-          </button>
+              <span className="fsp-art-overlay">
+                {loading ? (
+                  <Spinner size={64} />
+                ) : isPlaying ? (
+                  <IconPause size={64} />
+                ) : (
+                  <IconPlay size={64} />
+                )}
+              </span>
+            </button>
+          )}
 
           <div key={current.videoId} className="fsp-meta track-fade">
             <div className="fsp-title" title={current.title}>
               {current.title}
             </div>
             <div className="fsp-artist">
-              {[current.artist, current.album, current.duration]
-                .filter(Boolean)
-                .join(" · ")}
+              <Subtitle t={current} extra={[current.duration]} />
             </div>
           </div>
         </div>
@@ -467,7 +534,7 @@ export function FullscreenPlayer({
                   </div>
                   <div className="fsp-q-meta">
                     <div className="fsp-q-title">{t.title}</div>
-                    <div className="fsp-q-artist">{subtitle(t)}</div>
+                    <div className="fsp-q-artist"><Subtitle t={t} /></div>
                   </div>
                   {t.duration && <span className="fsp-q-dur">{t.duration}</span>}
                 </button>
@@ -527,7 +594,7 @@ export function FullscreenPlayer({
                     </div>
                     <div className="fsp-q-meta">
                       <div className="fsp-q-title">{t.title}</div>
-                      <div className="fsp-q-artist">{subtitle(t)}</div>
+                      <div className="fsp-q-artist"><Subtitle t={t} /></div>
                     </div>
                     {t.duration && <span className="fsp-q-dur">{t.duration}</span>}
                   </button>

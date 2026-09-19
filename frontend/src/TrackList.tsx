@@ -1,6 +1,7 @@
 import type { Track } from "./types";
 import { IconPlay, IconThumbUp, IconPlaylistAdd, IconTrash, IconMore } from "./icons";
 import { Equalizer } from "./Equalizer";
+import { ArtistLinks } from "./ArtistLinks";
 
 interface Props {
   tracks: Track[];
@@ -41,7 +42,9 @@ export function TrackList({ tracks, nowId, onPlay, onLike, likes, onAdd, onRemov
             </div>
             <div className="row-info">
               <div className="row-title">{t.title}</div>
-              <div className="row-artist">{t.artist}</div>
+              <div className="row-artist">
+                <ArtistLinks track={t} />
+              </div>
             </div>
             <div className="row-album">{t.album}</div>
             {hasActions && (

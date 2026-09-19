@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Track } from "./types";
 import type { MenuCtx } from "./TrackMenu";
+import { ArtistLinks } from "./ArtistLinks";
 import { IconQueueClose, IconMore, IconRemoveCircle } from "./icons";
 
 // "Wiedergabeliste" — the up-next side panel. Shows the live player queue, lets
@@ -75,7 +76,9 @@ export function QueuePanel({ queue, index, onClose, onPlayAt, onRemove, onMove, 
               {t.thumbnail && <img className="queue-art" src={t.thumbnail} alt="" loading="lazy" />}
               <div className="queue-info" onClick={() => onPlayAt(i)}>
                 <div className="queue-title">{t.title}</div>
-                <div className="queue-artist">{t.artist}</div>
+                <div className="queue-artist">
+                  <ArtistLinks track={t} />
+                </div>
               </div>
               <button className="row-act queue-remove" title="Entfernen" onClick={() => onRemove(i)}>
                 <IconRemoveCircle size={18} />

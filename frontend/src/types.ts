@@ -1,7 +1,14 @@
+// One credited artist and the artist page it links to.
+export interface ArtistRef {
+  name: string;
+  browseId: string | null;
+}
+
 export interface Track {
   videoId: string;
   title: string;
   artist: string;
+  artists?: ArtistRef[]; // the individual credits behind `artist`
   album: string | null;
   duration: string | null;
   durationSeconds: number | null;
@@ -62,6 +69,22 @@ export interface SearchSuggestion {
   removeToken: string | null;
 }
 
+// One stretch of the song the music video also covers: song time `primary`
+// (seconds) corresponds to video time `counterpart`, for `duration` seconds.
+export interface VideoSegment {
+  primary: number;
+  counterpart: number;
+  duration: number;
+}
+
+// What the "Titel / Video" toggle shows for a track. `videoId` null: there is
+// no video (toggle hidden). `segments` null: the video IS the playing track, so
+// its timeline matches the audio 1:1.
+export interface VideoCounterpart {
+  videoId: string | null;
+  segments: VideoSegment[] | null;
+}
+
 // "Statistiken für Interessierte" — technical details of the audio stream.
 export interface StreamInfo {
   videoId: string;
@@ -92,6 +115,8 @@ export type LoginState =
 
 export interface AuthStatus {
   authenticated: boolean;
+  // A session was captured but Google no longer honours it — sign in again.
+  expired?: boolean;
   login?: LoginState;
 }
 
@@ -113,6 +138,7 @@ export interface HomeCard {
   browseId?: string | null;
   title: string;
   subtitle: string | null;
+  artists?: ArtistRef[]; // video cards: the artist credits inside `subtitle`
   thumbnail: string | null;
   aspect: "video" | "square";
   explicit: boolean;
@@ -151,6 +177,7 @@ export interface SearchResult {
   thumbnail: string | null;
   duration: string | null;
   explicit: boolean;
+  artists?: ArtistRef[]; // songs: the artist credits inside `subtitle`
   channelId?: string | null;
   albumBrowseId?: string | null;
   libraryAddToken?: string | null;

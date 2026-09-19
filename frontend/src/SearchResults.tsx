@@ -40,7 +40,8 @@ const toCard = (i: SearchResult): HomeCard => ({
 const toTrack = (r: SearchResult): Track => ({
   videoId: r.videoId ?? "",
   title: r.title ?? "",
-  artist: r.subtitle ?? "",
+  artist: r.artists?.length ? r.artists.map((a) => a.name).join(", ") : r.subtitle ?? "",
+  artists: r.artists,
   album: null,
   duration: r.duration,
   durationSeconds: null,
@@ -103,7 +104,7 @@ export function SearchResults({
       {err && <div className="status error">{err}</div>}
 
       {!loading && !err && playable && (
-        <TrackList tracks={songs} nowId={nowId} onPlay={(t) => onPlay(t, songs)} onAdd={onAdd} onMenu={onMenu} />
+        <TrackList tracks={songs} nowId={nowId} onPlay={onPlay} onAdd={onAdd} onMenu={onMenu} />
       )}
 
       {!loading && !err && !playable && (

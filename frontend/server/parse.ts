@@ -91,10 +91,37 @@ export function endpoint(node: Any): Endpoint {
 
 // ---- shared shapes ----------------------------------------------------------
 
+// One credited artist: its display name plus the artist page it links to (null
+// when the byline run isn't a link, e.g. an unlinked featured name).
+export interface ArtistRef {
+  name: string;
+  browseId: string | null;
+}
+
+// The artist credits out of a byline's runs ("Titel • A & B • Album • 3:21").
+// Artists are the runs whose browse target is an artist/channel page; the
+// type label, album, separators and duration are skipped.
+export function artistRefs(runs: Any[] | null | undefined): ArtistRef[] {
+  const out: ArtistRef[] = [];
+  for (const r of runs ?? []) {
+    const name = r?.text?.trim();
+    if (!name || !r.navigationEndpoint) continue;
+    const ep = endpoint(r.navigationEndpoint);
+    const artistPage =
+      ep.pageType === "MUSIC_PAGE_TYPE_ARTIST" ||
+      ep.pageType === "MUSIC_PAGE_TYPE_USER_CHANNEL" ||
+      (!ep.pageType && ep.browseId?.startsWith("UC"));
+    if (artistPage && ep.browseId) out.push({ name, browseId: ep.browseId });
+  }
+  return out;
+}
+
 export interface Track {
   videoId: string;
   title: string | null;
   artist: string;
+  // The individual credits behind `artist`, each linking to its artist page.
+  artists?: ArtistRef[];
   album: string | null;
   duration: string | null;
   durationSeconds: number | null;
@@ -176,6 +203,8 @@ export interface Card {
   browseId?: string | null;
   title: string | null;
   subtitle: string | null;
+  // Video cards: the artist credits inside `subtitle` (for the playing track).
+  artists?: ArtistRef[];
   thumbnail: string | null;
   aspect: "video" | "square";
   explicit: boolean;
@@ -206,7 +235,7 @@ export function parseSongRow(r: Any): Track | null {
   // dotted separators are runs without navigationEndpoint.
   const subRuns: Any[] = flexText(cols[1])?.runs ?? [];
   const named = subRuns.filter((x: Any) => x.text && x.text.trim() !== "•" && x.text.trim());
-  const artists: string[] = [];
+  const artists: ArtistRef[] = [];
   let album: string | null = null;
   let duration: string | null = null;
   for (const run of named) {
@@ -215,7 +244,7 @@ export function parseSongRow(r: Any): Track | null {
     else if (run.navigationEndpoint) {
       const pt = endpoint(run.navigationEndpoint).pageType;
       if (pt === "MUSIC_PAGE_TYPE_ALBUM") album = t;
-      else artists.push(t);
+      else artists.push({ name: t, browseId: endpoint(run.navigationEndpoint).browseId ?? null });
     }
   }
   // fixedColumns sometimes holds the duration instead.
@@ -230,7 +259,8 @@ export function parseSongRow(r: Any): Track | null {
   return {
     videoId,
     title,
-    artist: artists.join(", "),
+    artist: artists.map((a) => a.name).join(", "),
+    artists,
     album,
     duration,
     durationSeconds: secs,
@@ -255,6 +285,7 @@ export function parseCard(r: Any): Card | null {
       videoId: ep.videoId,
       title,
       subtitle,
+      artists: artistRefs(r.subtitle?.runs),
       thumbnail,
       aspect: wide ? "video" : "square",
       explicit,
@@ -341,6 +372,7 @@ function cardFromSongRow(r: Any): Card | null {
     videoId: t.videoId,
     title: t.title,
     subtitle: t.artist || null,
+    artists: t.artists,
     thumbnail: t.thumbnail,
     aspect: "square",
     explicit: false,
@@ -531,6 +563,9 @@ export interface SearchResult {
   thumbnail: string | null;
   duration: string | null;
   explicit: boolean;
+  // Song rows: the artist credits inside `subtitle` (which also holds the type
+  // label, album and duration).
+  artists?: ArtistRef[];
   // Context-menu extras (song rows only) so search has the full right-click menu.
   channelId?: string | null;
   albumBrowseId?: string | null;
@@ -600,7 +635,17 @@ export function parseSearchItems(resp: Any): SearchResult[] {
       const fixed = r.fixedColumns?.[0];
       duration = text(fixed?.musicResponsiveListItemFixedColumnRenderer?.text);
     }
-    out.push({ kind: "song", videoId, title, subtitle, thumbnail: thumb(r), duration, explicit, ...menuExtras(r) });
+    out.push({
+      kind: "song",
+      videoId,
+      title,
+      subtitle,
+      artists: artistRefs(subRuns),
+      thumbnail: thumb(r),
+      duration,
+      explicit,
+      ...menuExtras(r),
+    });
   }
   return out;
 }
@@ -648,18 +693,37 @@ export interface AlbumPage {
   tracks: Track[];
 }
 
-export function parseAlbum(resp: Any): AlbumPage {
+export function parseAlbum(resp: Any, browseId?: string): AlbumPage {
   const h =
     findOne(resp, "musicResponsiveHeaderRenderer") ??
     findOne(resp, "musicDetailHeaderRenderer") ??
     findOne(resp, "musicEditablePlaylistDetailHeaderRenderer");
+  const title = text(h?.title);
+  const artist = text(h?.straplineTextOne);
+  const thumbnail = thumb(h);
+  // Album rows carry no cover and usually no artist (only featured guests get a
+  // byline), so inherit both — plus the album itself — from the header. Keeps
+  // the rows self-contained for the player bar, queue and context menu.
+  const albumArtists = artistRefs(h?.straplineTextOne?.runs);
+  const tracks = parseTracks(resp).map((t) => {
+    const artists = t.artists?.length ? t.artists : albumArtists;
+    return {
+      ...t,
+      artists,
+      artist: t.artist || artist || "",
+      album: t.album ?? title,
+      albumBrowseId: t.albumBrowseId ?? browseId ?? null,
+      channelId: t.channelId ?? artists[0]?.browseId ?? null,
+      thumbnail: t.thumbnail ?? thumbnail,
+    };
+  });
   return {
-    title: text(h?.title),
-    artist: text(h?.straplineTextOne),
+    title,
+    artist,
     subtitle: text(h?.subtitle),
     secondSubtitle: text(h?.secondSubtitle),
-    thumbnail: thumb(h),
-    tracks: parseTracks(resp),
+    thumbnail,
+    tracks,
   };
 }
 
@@ -672,16 +736,15 @@ function parsePanelVideo(n: Any): Track | null {
   const videoId = n?.videoId ?? endpoint(n?.navigationEndpoint ?? {}).videoId;
   if (!videoId) return null;
   const runs: Any[] = n?.longBylineText?.runs ?? [];
-  const artists = runs
-    .filter((r) => r?.navigationEndpoint && endpoint(r.navigationEndpoint).pageType === "MUSIC_PAGE_TYPE_ARTIST")
-    .map((r) => r.text);
-  const artist = artists.length ? artists.join(", ") : runs[0]?.text ?? "";
+  const artists = artistRefs(runs);
+  const artist = artists.length ? artists.map((a) => a.name).join(", ") : runs[0]?.text ?? "";
   const duration = text(n?.lengthText);
   const secs = duration ? duration.split(":").reduce((a, b) => a * 60 + Number(b), 0) : null;
   return {
     videoId,
     title: text(n?.title),
     artist,
+    artists,
     album: null,
     duration,
     durationSeconds: secs,
@@ -761,6 +824,60 @@ export function parseQueue(resp: Any): UpNext {
     else if (pt === "MUSIC_PAGE_TYPE_TRACK_LYRICS") lyricsBrowseId = be.browseId;
   }
   return { tracks, continuation: queueToken(resp), relatedBrowseId, lyricsBrowseId };
+}
+
+// ---- song ↔ video counterpart (next) ----------------------------------------
+
+// One stretch of the song that the music video also covers: song time
+// `primary` corresponds to video time `counterpart`, for `duration` seconds.
+export interface VideoSegment {
+  primary: number;
+  counterpart: number;
+  duration: number;
+}
+
+// What the "Titel / Video" toggle shows for a track. `videoId` is the video to
+// display (null: nothing to show — the toggle is hidden); `segments` maps song
+// time to video time, null when the video IS the playing track (identity).
+export interface VideoCounterpart {
+  videoId: string | null;
+  segments: VideoSegment[] | null;
+}
+
+// Video types whose own picture is the video (as opposed to an audio track's
+// static cover art).
+const VIDEO_TYPES = new Set(["MUSIC_VIDEO_TYPE_OMV", "MUSIC_VIDEO_TYPE_UGC"]);
+
+const videoType = (n: Any): string | null =>
+  findOne(n, "watchEndpointMusicConfig")?.musicVideoType ?? null;
+const ms = (v: Any) => Number(v ?? 0) / 1000;
+
+// The `next` response pairs an audio track (ATV) with its music video (OMV) in a
+// playlistPanelVideoWrapperRenderer: `primaryRenderer` is the requested track,
+// `counterpart[0]` the other version plus a `segmentMap` that aligns the two
+// timelines (a video's intro/outro means song 0:00 is often video 0:40+).
+export function parseCounterpart(resp: Any, videoId: string): VideoCounterpart {
+  const none: VideoCounterpart = { videoId: null, segments: null };
+  for (const w of findAll(resp, "playlistPanelVideoWrapperRenderer")) {
+    const primary = w?.primaryRenderer?.playlistPanelVideoRenderer;
+    if (primary?.videoId !== videoId) continue;
+    if (VIDEO_TYPES.has(videoType(primary) ?? "")) return { videoId, segments: null };
+    const cp = w?.counterpart?.[0];
+    const other = cp?.counterpartRenderer?.playlistPanelVideoRenderer;
+    if (!other?.videoId || !VIDEO_TYPES.has(videoType(other) ?? "")) return none;
+    const segments: VideoSegment[] = (cp?.segmentMap?.segment ?? []).map((s: Any) => ({
+      primary: ms(s?.primaryVideoStartTimeMilliseconds),
+      counterpart: ms(s?.counterpartVideoStartTimeMilliseconds),
+      duration: ms(s?.durationMilliseconds),
+    }));
+    return { videoId: other.videoId, segments };
+  }
+  // No wrapper: a lone row — only a real video has a picture worth showing.
+  for (const n of findAll(resp, "playlistPanelVideoRenderer")) {
+    if (n?.videoId !== videoId) continue;
+    return VIDEO_TYPES.has(videoType(n) ?? "") ? { videoId, segments: null } : none;
+  }
+  return none;
 }
 
 // Related (browse MPTR…): a mix of card carousels and a "you might like" track

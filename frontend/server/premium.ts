@@ -14,8 +14,8 @@
 
 import { createHash } from "node:crypto";
 import { createContext, runInContext } from "node:vm";
-import { getSession } from "./chrome";
-import type { AudioFormat, StreamInfo } from "./innertube";
+import { getSession, sessionSig } from "./chrome";
+import { assertLoggedIn, type AudioFormat, type StreamInfo } from "./innertube";
 
 const MUSIC_ORIGIN = "https://music.youtube.com";
 const WEB_UA =
@@ -50,11 +50,13 @@ interface PlayerAssets {
 
 // base.js rotates (a few times a day) and building the eval-portal is the
 // expensive part, so cache the whole bundle for a while.
-let assetsCache: { assets: PlayerAssets; expires: number } | null = null;
+let assetsCache: { assets: PlayerAssets; expires: number; sig: number } | null = null;
 const ASSETS_TTL_MS = 30 * 60 * 1000;
 
 // The raw player response is reused by both the stream resolver and the
-// "Audioqualität" tab; cache it briefly to avoid a double round-trip.
+// "Audioqualität" tab; cache it briefly to avoid a double round-trip. Keyed by
+// session as well as video: the response depends on who asked (an expired
+// session gets an anonymous, format-less answer that must not outlive a re-login).
 const playerCache = new Map<string, { player: any; expires: number }>();
 const PLAYER_TTL_MS = 2 * 60 * 1000;
 
@@ -434,9 +436,11 @@ async function fetchAssets(): Promise<PlayerAssets> {
 }
 
 async function getAssets(): Promise<PlayerAssets> {
-  if (assetsCache && assetsCache.expires > Date.now()) return assetsCache.assets;
+  const sig = sessionSig();
+  if (assetsCache && assetsCache.sig === sig && assetsCache.expires > Date.now())
+    return assetsCache.assets;
   const assets = await fetchAssets();
-  assetsCache = { assets, expires: Date.now() + ASSETS_TTL_MS };
+  assetsCache = { assets, expires: Date.now() + ASSETS_TTL_MS, sig };
   return assets;
 }
 
@@ -485,15 +489,18 @@ async function callPremiumPlayer(videoId: string, assets: PlayerAssets): Promise
     }
   );
   if (!res.ok) throw new Error(`premium player ${res.status}: ${await res.text()}`);
-  return res.json();
+  const j = await res.json();
+  assertLoggedIn(j);
+  return j;
 }
 
 async function getPlayer(videoId: string): Promise<{ player: any; assets: PlayerAssets }> {
   const assets = await getAssets();
-  const hit = playerCache.get(videoId);
+  const key = `${sessionSig()}:${videoId}`;
+  const hit = playerCache.get(key);
   if (hit && hit.expires > Date.now()) return { player: hit.player, assets };
   const player = await callPremiumPlayer(videoId, assets);
-  playerCache.set(videoId, { player, expires: Date.now() + PLAYER_TTL_MS });
+  playerCache.set(key, { player, expires: Date.now() + PLAYER_TTL_MS });
   return { player, assets };
 }
 
@@ -700,6 +707,37 @@ export async function resolveAuthedAudio(videoId: string, hq: boolean): Promise<
     throw new Error(`authed: ${player?.playabilityStatus?.reason || status}`);
   const fmt = pickAudio(player, hq);
   if (!fmt) throw new Error("authed: no audio format");
+  return {
+    itag: fmt.itag,
+    url: await resolvedUrl(fmt, assets),
+    mimeType: fmt.mimeType,
+    bitrate: fmt.bitrate ?? 0,
+    contentLength: fmt.contentLength,
+  };
+}
+
+// Pick the picture for the "Video" view: a video-only adaptive format (the audio
+// keeps coming from the audio stream, so a muxed format would only duplicate it).
+// The tallest rendition up to 1080p, preferring H.264 at equal height (hardware
+// decode everywhere; VP9/AV1 can cost real CPU on older machines).
+const MAX_VIDEO_HEIGHT = 1080;
+function pickVideo(player: any): any | null {
+  const formats = (player?.streamingData?.adaptiveFormats ?? []).filter(
+    (f: any) => String(f.mimeType).startsWith("video/") && (f.height ?? 0) <= MAX_VIDEO_HEIGHT
+  );
+  const rank = (f: any) => (String(f.mimeType).includes("avc1") ? 1 : 0);
+  return formats.sort((a: any, b: any) => (b.height ?? 0) - (a.height ?? 0) || rank(b) - rank(a))[0] ?? null;
+}
+
+// Resolve a direct URL for the video-only picture of `videoId` via the
+// authenticated web player — descrambled exactly like the audio formats.
+export async function resolveAuthedVideo(videoId: string): Promise<AudioFormat> {
+  const { player, assets } = await getPlayer(videoId);
+  const status = player?.playabilityStatus?.status;
+  if (status !== "OK")
+    throw new Error(`video: ${player?.playabilityStatus?.reason || status}`);
+  const fmt = pickVideo(player);
+  if (!fmt) throw new Error("video: no video format");
   return {
     itag: fmt.itag,
     url: await resolvedUrl(fmt, assets),

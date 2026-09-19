@@ -5,6 +5,7 @@ import { getPlayerInfo } from "./api";
 import type { StreamInfo } from "./types";
 import type { PlayerState } from "./usePlayer";
 import { Spinner } from "./Spinner";
+import { ArtistLinks } from "./ArtistLinks";
 import {
   IconPlay,
   IconPause,
@@ -233,7 +234,8 @@ export function PlayerBar({
               {current?.title ?? "Nichts wird abgespielt"}
             </div>
             <div className="player-artist">
-              {[current?.artist, current?.album].filter(Boolean).join(" · ")}
+              {current && <ArtistLinks track={current} />}
+              {current?.album && `${current.artist || current.artists?.length ? " · " : ""}${current.album}`}
             </div>
           </div>
           <button
