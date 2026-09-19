@@ -10,17 +10,7 @@ import { Equalizer } from "./Equalizer";
 import { ArtistLinks } from "./ArtistLinks";
 import { VideoStage } from "./FullscreenVideo";
 import { useVideoInfo } from "./useVideoInfo";
-
-// The "Titel / Video" choice sticks across tracks and sessions, like on YTM.
-const MODE_KEY = "ytm.fsp.mode";
-type StageMode = "song" | "video";
-function loadMode(): StageMode {
-  try {
-    return localStorage.getItem(MODE_KEY) === "video" ? "video" : "song";
-  } catch {
-    return "song";
-  }
-}
+import type { StageMode } from "./stageMode";
 
 /** "artist · album", the artists linking to their pages. */
 function Subtitle({ t, extra }: { t: Track; extra?: (string | null)[] }) {
@@ -137,6 +127,10 @@ interface Props {
   onSearch?: (term: string) => void;
   // The audio clock, which the "Video" view follows.
   getCurrentTime: () => number;
+  // "Titel / Video" toggle state — owned by the parent so playing a music-video
+  // card can switch straight to the video.
+  mode: StageMode;
+  onModeChange: (m: StageMode) => void;
 }
 
 export function FullscreenPlayer({
@@ -154,6 +148,8 @@ export function FullscreenPlayer({
   showSearch,
   onSearch,
   getCurrentTime,
+  mode,
+  onModeChange: setMode,
 }: Props) {
   const { current, isPlaying, loading, queue, index } = state;
 
@@ -168,18 +164,12 @@ export function FullscreenPlayer({
   };
 
   // "Titel / Video" toggle — only offered when the track has a music video.
-  const [mode, setModeState] = useState<StageMode>(loadMode);
-  const setMode = (m: StageMode) => {
-    setModeState(m);
-    try {
-      localStorage.setItem(MODE_KEY, m);
-    } catch {
-      /* not persisted — fine */
-    }
-  };
   const videoInfo = useVideoInfo(current?.videoId);
   const hasVideo = !!videoInfo?.videoId;
   const showVideo = mode === "video" && hasVideo;
+  // The playing video's aspect ratio; the frame is sized to it so there are no
+  // bars (16:9 until the metadata arrives).
+  const [aspect, setAspect] = useState(16 / 9);
 
   const [tab, setTab] = useState<"next" | "lyrics" | "related" | "quality">("next");
   // If the quality tab is open and the setting gets turned off, fall back.
@@ -353,7 +343,10 @@ export function FullscreenPlayer({
 
       <div className="fsp-body">
         {/* Left: album art + meta — the focal point */}
-        <div className={`fsp-stage ${showVideo ? "is-video" : ""}`}>
+        <div
+          className={`fsp-stage ${showVideo ? "is-video" : ""}`}
+          style={{ "--fsp-ratio": aspect } as React.CSSProperties}
+        >
           {/* Always rendered (hidden without a video) so its row stays reserved
               and the art doesn't jump when the lookup lands. */}
           <div className={`fsp-mode ${hasVideo ? "" : "is-hidden"}`} role="tablist">
@@ -382,6 +375,7 @@ export function FullscreenPlayer({
               isPlaying={isPlaying}
               getCurrentTime={getCurrentTime}
               onToggle={onToggle}
+              onAspect={setAspect}
             />
           ) : (
             <button

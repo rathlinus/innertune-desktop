@@ -981,7 +981,17 @@
 .shelf-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 20px;
+  gap: 24px 20px;
+}
+/* In the grid a tile fills its column instead of keeping its fixed carousel
+   width (which overflowed the column and ate the gap). Video tiles are cropped
+   square, as YouTube Music does in grids, so every row lines up. */
+.shelf-grid .card {
+  width: auto;
+  min-width: 0;
+}
+.shelf-grid .card-video .card-thumb {
+  aspect-ratio: 1;
 }
 .lib-card {
   cursor: pointer;
@@ -1241,26 +1251,31 @@
   z-index: 2;
   height: 100%;
   display: grid;
-  grid-template-columns: 1fr minmax(380px, 32vw);
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 32vw);
   gap: 56px;
-  padding: 88px 64px 56px;
+  padding: 80px 64px clamp(24px, 6vh, 56px);
   max-width: 1640px;
   margin: 0 auto;
+  /* The stage sizes its art from the real space left here (cqh), not from the
+     viewport, so the title below the art never runs under the player bar. */
+  container-type: size;
 }
 
 /* Left stage — the focal point */
 .fsp-stage {
+  --fsp-gap: clamp(16px, 4vh, 32px);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   min-width: 0;
-  gap: 32px;
+  min-height: 0;
+  gap: var(--fsp-gap);
 }
 /* Album art doubles as a play/pause toggle with a hover overlay. */
 .fsp-art-wrap {
   position: relative;
-  width: var(--fsp-art);
+  width: min(var(--fsp-art), 100%);
   aspect-ratio: 1;
   flex: 0 0 auto;
   padding: 0;
@@ -1303,7 +1318,7 @@
 }
 .fsp-meta {
   /* Left-aligned with the art above it */
-  width: var(--fsp-art);
+  width: min(var(--fsp-art), 100%);
   max-width: 100%;
   min-width: 0;
   text-align: left;
@@ -1330,7 +1345,9 @@
    Its row is always reserved (hidden without a video) so the art never jumps;
    the art gives up that room on short windows via --fsp-art. */
 .fsp-stage {
-  --fsp-art: min(62vh - 64px, 560px);
+  /* Whatever height is left after the toggle (~30px net), the title block
+     (~64px) and the two gaps. */
+  --fsp-art: max(160px, min(100cqh - 2 * var(--fsp-gap) - 100px, 560px));
 }
 .fsp-mode {
   display: flex;
@@ -1365,24 +1382,22 @@
   color: #fff;
 }
 
-/* Video view: 16:9 at the same height as the square art, so the title below
-   doesn't jump when switching. */
+/* Video view: framed at the video's own aspect ratio (--fsp-ratio, set from its
+   metadata) so there are no bars — as tall as the square art, or narrower if
+   the column can't fit that width. */
+.fsp-stage {
+  --fsp-video-w: min(100%, calc(var(--fsp-art) * var(--fsp-ratio, 1.7778)));
+}
 .fsp-video-wrap {
   position: relative;
-  height: var(--fsp-art);
-  aspect-ratio: 16 / 9;
-  max-width: 100%;
+  width: var(--fsp-video-w);
+  aspect-ratio: var(--fsp-ratio, 1.7778);
   flex: 0 0 auto;
   border-radius: 12px;
   overflow: hidden;
   background: #000;
   cursor: pointer;
   box-shadow: 0 32px 64px rgba(0, 0, 0, 0.5), 0 12px 24px rgba(0, 0, 0, 0.35);
-}
-@supports not (aspect-ratio: 16 / 9) {
-  .fsp-video-wrap {
-    width: calc(var(--fsp-art) * 16 / 9);
-  }
 }
 .fsp-video-wrap:fullscreen {
   border-radius: 0;
@@ -1450,7 +1465,7 @@
   opacity: 1;
 }
 .fsp-stage.is-video .fsp-meta {
-  width: calc(var(--fsp-art) * 16 / 9);
+  width: var(--fsp-video-w);
 }
 
 /* Now-playing equalizer glyph (shared: queue, track rows, home cards) */
@@ -1528,6 +1543,18 @@
   gap: 24px;
   padding: 0 4px 12px;
   flex: 0 0 auto;
+  /* Scroll sideways rather than clip when the panel is narrow. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fsp-tabs::-webkit-scrollbar {
+  display: none;
+}
+/* The global scrollbar thumb carries a border in the page background colour,
+   which shows up as a dark ring over the blurred backdrop here. */
+.fsp ::-webkit-scrollbar-thumb {
+  border-color: transparent;
+  background-clip: padding-box;
 }
 .fsp-tab {
   position: relative;
@@ -1849,16 +1876,51 @@
   border-top-color: currentColor;
 }
 
+/* Mid-size windows: tighter gutters and a proportionally wider panel so all
+   four tabs fit next to each other. */
+@media (max-width: 1320px) {
+  .fsp-body {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 42%);
+    gap: 32px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+  .fsp-tabs {
+    gap: 18px;
+  }
+  .fsp-title {
+    font-size: 28px;
+  }
+}
+
 /* Narrow screens: stack panel under the stage */
 @media (max-width: 900px) {
   .fsp-body {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(280px, 1fr);
     gap: 24px;
     padding: 72px 20px 24px;
     overflow-y: auto;
   }
-  .fsp-panel {
-    min-height: 280px;
+  .fsp-stage {
+    /* Leave the queue some room below the art. */
+    --fsp-art: max(160px, min(55cqh, 100cqw, 420px));
+  }
+  .fsp-title {
+    font-size: 24px;
+  }
+}
+
+/* Player bar on narrow windows: drop the secondary controls (time readout,
+   volume slider) so the title keeps room. */
+@media (max-width: 860px) {
+  .player-grid {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 0 12px;
+  }
+  .player-left .time,
+  .vol {
+    display: none;
   }
 }
 

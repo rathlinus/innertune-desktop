@@ -34,9 +34,12 @@ interface Props {
   isPlaying: boolean;
   getCurrentTime: () => number;
   onToggle: () => void;
+  // Reports the video's real aspect ratio (width / height) once known, so the
+  // stage can line the title up with the picture.
+  onAspect?: (ratio: number) => void;
 }
 
-export function VideoStage({ info, thumbnail, isPlaying, getCurrentTime, onToggle }: Props) {
+export function VideoStage({ info, thumbnail, isPlaying, getCurrentTime, onToggle, onAspect }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
@@ -110,6 +113,10 @@ export function VideoStage({ info, thumbnail, isPlaying, getCurrentTime, onToggl
           muted
           playsInline
           preload="auto"
+          onLoadedMetadata={(e) => {
+            const { videoWidth: w, videoHeight: h } = e.currentTarget;
+            if (w && h) onAspect?.(w / h);
+          }}
           onLoadedData={() => setReady(true)}
           onError={() => setFailed(true)}
         />

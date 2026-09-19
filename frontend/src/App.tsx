@@ -43,6 +43,7 @@ import { QueuePanel } from "./QueuePanel";
 import { LoginModal } from "./LoginModal";
 import { SettingsView } from "./SettingsView";
 import { useSettings } from "./settings";
+import { useStageMode } from "./stageMode";
 import {
   IconSearch,
   IconHome,
@@ -58,6 +59,8 @@ import "./App.css";
 
 const SEARCH_HISTORY_KEY = "ytm.search.history";
 const LIKES_KEY = "ytm.likes.v1";
+// Below this width the sidebar auto-collapses to its icon rail.
+const NARROW_QUERY = window.matchMedia("(max-width: 1100px)");
 
 // Native desktop shell flags (see electron/preload.ts). Undefined in a browser
 // tab, so every field defaults off and the web layout is unaffected.
@@ -159,11 +162,19 @@ export default function App() {
   const [categoryShelves, setCategoryShelves] = useState<Shelf[]>([]);
   const [gridCards, setGridCards] = useState<HomeCard[] | null>(null);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [collapsed, setCollapsed] = useState(false);
+  // The sidebar folds to its icon rail on narrow windows (and unfolds again when
+  // the window grows back); the menu button still toggles it manually.
+  const [collapsed, setCollapsed] = useState(() => NARROW_QUERY.matches);
+  useEffect(() => {
+    const onChange = (e: MediaQueryListEvent) => setCollapsed(e.matches);
+    NARROW_QUERY.addEventListener("change", onChange);
+    return () => NARROW_QUERY.removeEventListener("change", onChange);
+  }, []);
   const [account, setAccount] = useState<Account | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [fsMounted, setFsMounted] = useState(false);
+  const [stageMode, setStageMode] = useStageMode();
 
   const [likes, setLikes] = useState<Set<string>>(() => loadSet(LIKES_KEY));
   const [dislikes, setDislikes] = useState<Set<string>>(new Set());
@@ -465,6 +476,11 @@ export default function App() {
 
   function onCard(card: HomeCard) {
     if (card.videoId) {
+      // A music-video card (16:9 art) opens the player on the video, like YTM.
+      if (card.aspect === "video") {
+        setStageMode("video");
+        setFullscreen(true);
+      }
       void playRadio({
         videoId: card.videoId,
         title: card.title ?? "",
@@ -1071,6 +1087,8 @@ export default function App() {
           onClose={() => setFullscreen(false)}
           onToggle={player.toggle}
           getCurrentTime={player.getCurrentTime}
+          mode={stageMode}
+          onModeChange={setStageMode}
           onPlayAt={player.playAt}
           onPlay={playTrack}
           onMove={player.moveInQueue}
