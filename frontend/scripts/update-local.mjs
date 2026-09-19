@@ -15,7 +15,7 @@
 //      inherited and would start Innertune.exe as plain Node ("bad option").
 
 import { spawn, spawnSync, execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,20 +66,48 @@ async function stopApp() {
   await sleep(500); // let Windows release the file handles
 }
 
+// Remove the previous installer before building. makensis overwrites it in
+// place and fails with "Can't open output file" if anything still has it open —
+// typically Windows Defender scanning it right after the last build/install.
+// Such locks are brief, so wait them out instead of failing the whole build.
+async function removeOldInstaller(file) {
+  for (let i = 0; i < 20; i++) {
+    try {
+      rmSync(file, { force: true });
+      return;
+    } catch {
+      await sleep(500);
+    }
+  }
+  fail(`${path.basename(file)} is locked by another program - close it and try again`);
+}
+
+function build() {
+  return spawnSync(
+    process.execPath,
+    [path.join(root, "scripts", "build-electron.mjs"), `--arch=${process.arch}`],
+    { cwd: root, stdio: "inherit" }
+  ).status;
+}
+
 async function main() {
   if (process.platform !== "win32") fail("only Windows (NSIS) installs are supported");
 
-  // 1. Build.
+  const installer = path.join(root, "release", `${product} Setup ${pkg.version}.exe`);
+
+  // 1. Build. One retry: a scanner can also grab the freshly written
+  //    uninstaller/installer mid-build, which fails the same way and passes on
+  //    a second attempt.
   if (!skipBuild) {
     console.log(`[update] building ${product} ${pkg.version} (${process.arch})`);
-    const r = spawnSync(
-      process.execPath,
-      [path.join(root, "scripts", "build-electron.mjs"), `--arch=${process.arch}`],
-      { cwd: root, stdio: "inherit" }
-    );
-    if (r.status !== 0) fail("build failed - the installed app was left untouched");
+    await removeOldInstaller(installer);
+    if (build() !== 0) {
+      console.log("\n[update] build failed - retrying once in 3 s");
+      await sleep(3000);
+      await removeOldInstaller(installer);
+      if (build() !== 0) fail("build failed - the installed app was left untouched");
+    }
   }
-  const installer = path.join(root, "release", `${product} Setup ${pkg.version}.exe`);
   if (!existsSync(installer)) fail(`installer not found: ${installer}`);
 
   // 2. Stop the running app (remembering where it's installed).
