@@ -631,7 +631,21 @@ function buildUrl(baseUrl: string, sp: string, sig: string, n: string | null): s
 // static signatureCipher descramble (older single-arg / nested-int players). The
 // decorator strategy is verified against googlevideo once per player, then trusted.
 async function resolvedUrl(fmt: any, assets: PlayerAssets): Promise<string> {
-  if (fmt.url) return fmt.url;
+  // Newer players (e.g. 0229cd64) hand out a plain `url` that is already signed
+  // but still carries the raw `n` throttle param; googlevideo 403s it until `n`
+  // is transformed. Run just the n half through the decorator. The sign step
+  // also needs an `s`; a dummy of real-signature length is signed and ignored
+  // (a too-short one makes the sign step bail out).
+  if (fmt.url) {
+    const u = new URL(fmt.url);
+    const nIn = u.searchParams.get("n");
+    if (!nIn) return fmt.url;
+    const dec = decoratorName(assets);
+    const sol = dec ? solveViaDecorator(assets, dec, "A".repeat(100), nIn) : null;
+    if (!sol?.n) throw new Error("n-challenge: decorator could not solve n for a plain url");
+    u.searchParams.set("n", sol.n);
+    return u.toString();
+  }
   const cipher = new URLSearchParams(fmt.signatureCipher);
   const baseUrl = cipher.get("url");
   if (!baseUrl) throw new Error("no url/signatureCipher");
