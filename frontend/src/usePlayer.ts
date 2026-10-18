@@ -58,15 +58,29 @@ interface Persisted {
 // here. Drops *every* (…)/[…] parenthetical and trailing "- … " / "feat. …"
 // tail, leaving just the core title. Used only when appending radio results;
 // manual "Als Nächstes" / "In die Wiedergabeliste" keep distinct versions.
-function songKey(title: string | null): string {
-  return (title ?? "")
-    .toLowerCase()
-    .replace(/[([][^)\]]*[)\]]/g, " ") // drop all closed (…) and […] segments
-    .replace(/[([][^)\]]*$/, " ") // …and an unclosed trailing one
-    .replace(/\s[-–—]\s.*$/, " ") // drop "- Radio Edit" / "- Live" style tails
-    .replace(/\bfeat\.?\b.*$/, " ") // drop "feat. …" credits
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+// Music videos titled "Artist, Feat - Title [Official Music Video]" lose that
+// artist prefix first (when it names one of the track's artists), otherwise the
+// "- …" tail rule below would key them on the artist instead of the song.
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+function stripArtistPrefix(title: string, artists: string[]): string {
+  const m = title.match(/^(.+?)\s[-–—]\s(.+)$/);
+  if (!m) return title;
+  const head = ` ${norm(m[1])} `;
+  return artists.some((a) => norm(a) && head.includes(` ${norm(a)} `)) ? m[2] : title;
+}
+const artistNames = (t: Track) => [
+  ...(t.artists ?? []).map((a) => a.name),
+  ...(t.artist ?? "").split(/\s*[,•&]\s*/),
+];
+function songKey(title: string | null, artists: string[] = []): string {
+  return norm(
+    stripArtistPrefix(title ?? "", artists)
+      .toLowerCase()
+      .replace(/[([][^)\]]*[)\]]/g, " ") // drop all closed (…) and […] segments
+      .replace(/[([][^)\]]*$/, " ") // …and an unclosed trailing one
+      .replace(/\s[-–—]\s.*$/, " ") // drop "- Radio Edit" / "- Live" style tails
+      .replace(/\bfeat\.?\b.*$/u, " ") // drop "feat. …" credits
+  );
 }
 
 function loadPersisted(): Persisted | null {
@@ -199,7 +213,7 @@ export function usePlayer(options: PlayerOptions = {}) {
       if (!tracks.length) return;
       // Fall back to videoId when a title reduces to an empty key (e.g. a title
       // that is entirely a parenthetical) so unrelated tracks aren't merged.
-      const keyOf = (t: Track) => songKey(t.title) || t.videoId;
+      const keyOf = (t: Track) => songKey(t.title, artistNames(t)) || t.videoId;
       const have = new Set(queueRef.current.map(keyOf));
       const add: Track[] = [];
       for (const t of tracks) {

@@ -779,15 +779,28 @@ function queueToken(resp: Any): string | null {
 // radio's clean byline). The title is normalized to drop *video-type* markers
 // ("(Official Video)", "(Lyric Video)", a truncated "(Lyric Vid…") while
 // keeping meaningful parentheticals like "(… Remix)" so a remix is not merged
-// with the original. Must match the frontend copy in usePlayer.ts.
-const VIDEO_MARKER = /[([][^)\]]*\b(?:official|video|lyric|lyrics|audio|visuali\w*|clip|mv|hd|4k|hq)\b[^)\]]*[)\]]/g;
-export function songKey(title: string | null): string {
-  return (title ?? "")
-    .toLowerCase()
-    .replace(VIDEO_MARKER, " ")
-    .replace(/[([][^)\]]*$/, " ") // a dangling "(… from a truncated title
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+// with the original. Music videos are often titled "Artist, Feat - Title [Official
+// Music Video]"; that artist prefix is dropped when it names one of the track's
+// artists. Must match the frontend copy in usePlayer.ts.
+const VIDEO_MARKER = /[([][^)\]]*\b(?:official|video|lyric|lyrics|audio|visuali\w*|clip|mv|hd|4k|hq)\b[^)\]]*[)\]]/gu;
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+export function stripArtistPrefix(title: string, artists: string[]): string {
+  const m = title.match(/^(.+?)\s[-–—]\s(.+)$/);
+  if (!m) return title;
+  const head = ` ${norm(m[1])} `;
+  return artists.some((a) => norm(a) && head.includes(` ${norm(a)} `)) ? m[2] : title;
+}
+const artistNames = (t: Track) => [
+  ...(t.artists ?? []).map((a) => a.name),
+  ...(t.artist ?? "").split(/\s*[,•&]\s*/),
+];
+export function songKey(title: string | null, artists: string[] = []): string {
+  return norm(
+    stripArtistPrefix(title ?? "", artists)
+      .toLowerCase()
+      .replace(VIDEO_MARKER, " ")
+      .replace(/[([][^)\]]*$/, " ") // a dangling "(… from a truncated title
+  );
 }
 
 export function parseQueue(resp: Any): UpNext {
@@ -801,7 +814,7 @@ export function parseQueue(resp: Any): UpNext {
     const t = parsePanelVideo(n);
     if (!t) continue;
     const atv = findOne(n, "watchEndpointMusicConfig")?.musicVideoType === "MUSIC_VIDEO_TYPE_ATV";
-    const key = t.title ? songKey(t.title) : t.videoId;
+    const key = (t.title && songKey(t.title, artistNames(t))) || t.videoId;
     const at = idxByKey.get(key);
     if (at == null) {
       idxByKey.set(key, tracks.length);
