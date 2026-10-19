@@ -319,7 +319,7 @@ export function FullscreenPlayer({
       {/* Blurred art backdrop */}
       {current.thumbnail && (
         <div
-          key={current.videoId}
+          key={`backdrop-${current.videoId}`}
           className="fsp-backdrop fsp-backdrop-fade"
           style={{ backgroundImage: `url(${current.thumbnail})` }}
         />
@@ -369,7 +369,7 @@ export function FullscreenPlayer({
           </div>
           {showVideo && videoInfo ? (
             <VideoStage
-              key={videoInfo.videoId}
+              key={`video-${videoInfo.videoId}`}
               info={videoInfo}
               thumbnail={current.thumbnail}
               isPlaying={isPlaying}
@@ -385,7 +385,7 @@ export function FullscreenPlayer({
             >
               {current.thumbnail ? (
                 <img
-                  key={current.videoId}
+                  key={`art-${current.videoId}`}
                   className="fsp-art fsp-art-fade"
                   src={current.thumbnail}
                   alt=""
@@ -407,7 +407,7 @@ export function FullscreenPlayer({
             </button>
           )}
 
-          <div key={current.videoId} className="fsp-meta track-fade">
+          <div key={`meta-${current.videoId}`} className="fsp-meta track-fade">
             <div className="fsp-title" title={current.title}>
               {current.title}
             </div>
