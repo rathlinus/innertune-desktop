@@ -1,0 +1,92 @@
+name: Music Assistant test image
+
+# Builds Music Assistant with the native YouTube Music provider for amd64 and
+# arm64 and pushes it to ghcr.io/<owner>/ytmusic-native-ma, once per Music
+# Assistant release in the matrix. The provider comes from the rathlinus/server
+# fork, at the exact commit `repos/server` points to in this repo.
+
+on:
+  push:
+    paths:
+      - "music-assistant/**"
+      - "repos/server"
+      - ".github/workflows/music-assistant.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: music-assistant-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/ytmusic-native-ma
+
+jobs:
+  build:
+    name: Build MA ${{ matrix.ma_version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ma_version: "2.11.0b7"
+            channel: beta
+          - ma_version: "2.10.8"
+            channel: stable
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Find the provider commit
+        id: provider
+        run: echo "sha=$(git ls-tree HEAD repos/server | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7
+        with:
+          repository: rathlinus/server
+          ref: ${{ steps.provider.outputs.sha }}
+          path: repos/server
+          sparse-checkout: music_assistant/providers/ytmusic_native
+
+      # the base image is about 3 GB per architecture
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: music-assistant
+          build-contexts: provider=repos/server/music_assistant/providers/ytmusic_native
+          build-args: MA_VERSION=${{ matrix.ma_version }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ matrix.ma_version }}
+            ${{ env.IMAGE }}:${{ matrix.channel }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=Music Assistant with native YouTube Music
+            org.opencontainers.image.description=Music Assistant ${{ matrix.ma_version }} with the native YouTube Music provider (rathlinus/server@${{ steps.provider.outputs.sha }})
+
+      # the provider must import and its V8 must run on both architectures
+      - name: Smoke test
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            docker run --rm --platform "$platform" --entrypoint /app/venv/bin/python \
+              "$IMAGE:${{ matrix.ma_version }}" -c "
+          import music_assistant.providers.ytmusic_native as p
+          from py_mini_racer import MiniRacer
+          assert MiniRacer().eval('6 * 7') == 42
+          print('$platform ok:', p.__name__)
+          "
+          done
