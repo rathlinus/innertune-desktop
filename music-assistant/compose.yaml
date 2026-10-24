@@ -1,0 +1,30 @@
+# Music Assistant test server with the native YouTube Music provider.
+#
+#   docker compose up -d --build     build and start (UI on http://localhost:8095)
+#   docker compose logs -f           follow the server log
+#   docker compose down              stop (settings and library stay in the volume)
+#   docker compose down -v           stop and wipe everything
+
+services:
+  music-assistant:
+    build:
+      context: .
+      additional_contexts:
+        provider: ../repos/server/music_assistant/providers/ytmusic_native
+      args:
+        # 2.11.0b7 matches the dev branch the provider targets; 2.10.8 (stable) works too
+        MA_VERSION: ${MA_VERSION:-2.11.0b7}
+    image: ytmusic-native-ma:${MA_VERSION:-2.11.0b7}
+    container_name: ytmusic-native-ma
+    restart: unless-stopped
+    ports:
+      - "8095:8095" # web UI and API
+      - "8097:8097" # audio streams for players
+      - "8927:8927" # Sendspin, the browser player
+    volumes:
+      - data:/data
+    environment:
+      - TZ=Europe/Berlin
+
+volumes:
+  data:
