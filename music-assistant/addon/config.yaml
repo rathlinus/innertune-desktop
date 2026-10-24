@@ -1,0 +1,44 @@
+# The official Music Assistant (BETA) add-on, running the image that adds the native
+# YouTube Music provider. The version is the image tag: Music Assistant release plus
+# the first 7 characters of the provider commit (the repos/server pointer).
+name: Music Assistant (YouTube Music Native)
+version: 2.11.0b7-e6267db
+slug: music_assistant_ytmusic_native
+description: Music Assistant 2.11 beta with the native YouTube Music provider, for testing.
+url: https://github.com/rathlinus/innertune-desktop/tree/music-assistant/music-assistant
+arch:
+  - amd64
+  - aarch64
+homeassistant_api: true
+hassio_api: true
+hassio_role: manager
+discovery:
+  - music_assistant
+auth_api: true
+host_network: true
+ingress: true
+ingress_port: 8094
+audio: true
+panel_icon: mdi:music-assistant
+panel_title: Music Assistant (YTM)
+panel_admin: false
+uart: false
+apparmor: true
+map:
+  - media:rw
+  - ssl:ro
+init: false
+backup_exclude:
+  - cache.db
+  - collage_images/*
+  - .cache/*
+  - library.db.backup
+stage: experimental
+image: ghcr.io/rathlinus/ytmusic-native-ma
+tmpfs: true
+options:
+  log_level: info
+  safe_mode: false
+schema:
+  log_level: list(debug|info|warning|error)
+  safe_mode: bool

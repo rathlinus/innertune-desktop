@@ -41,7 +41,17 @@ jobs:
 
       - name: Find the provider commit
         id: provider
-        run: echo "sha=$(git ls-tree HEAD repos/server | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+        run: |
+          sha="$(git ls-tree HEAD repos/server | awk '{print $3}')"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ matrix.ma_version }}-${sha:0:7}" >> "$GITHUB_OUTPUT"
+
+      # the Home Assistant add-on installs the image whose tag equals its version
+      - name: Check the add-on version
+        if: matrix.channel == 'beta'
+        run: |
+          grep -q "^version: ${{ steps.provider.outputs.tag }}$" music-assistant/addon/config.yaml \
+            || echo "::warning file=music-assistant/addon/config.yaml::set version to ${{ steps.provider.outputs.tag }} so the add-on installs this build"
 
       - uses: actions/checkout@v7
         with:
@@ -70,6 +80,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
+            ${{ env.IMAGE }}:${{ steps.provider.outputs.tag }}
             ${{ env.IMAGE }}:${{ matrix.ma_version }}
             ${{ env.IMAGE }}:${{ matrix.channel }}
           labels: |

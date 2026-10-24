@@ -32,6 +32,27 @@ docker run -d --name ytmusic-native-ma -p 8095:8095 -p 8097:8097 -p 8927:8927 \
 On a Linux host, use `--network host` instead of the `-p` flags so speakers on
 the network are found.
 
+Each image is also tagged `<MA version>-<provider commit>`, e.g. `2.11.0b7-e6267db`.
+
+## Home Assistant add-on
+
+This repo is also a Home Assistant add-on repository (`repository.yaml` at the
+root, the add-on in `addon/`). It is the official Music Assistant beta add-on
+running the beta image above. Add this URL under Settings → Add-ons → Add-on
+Store → ⋮ → Repositories:
+
+```
+https://github.com/rathlinus/innertune-desktop#music-assistant
+```
+
+The `#music-assistant` part selects this branch; drop it once the branch is
+merged into main. Stop the official Music Assistant add-on before starting this
+one, since both use the same ports on the host network.
+
+The add-on's `version` in `addon/config.yaml` is the image tag it installs. When
+you move the `repos/server` pointer, set it to the new `2.11.0b7-<commit>` tag
+(the workflow warns when they differ), so Home Assistant offers the update.
+
 ## The cookie
 
 The setup form asks for the Cookie header of a logged-in music.youtube.com
