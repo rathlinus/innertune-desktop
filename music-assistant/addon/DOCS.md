@@ -11,6 +11,9 @@ add-on keeps its own settings and library; it does not touch the official one.
 
 ## Add YouTube Music
 
+The provider needs an account with YouTube Music Premium. Setup refuses a free
+account, as the official YouTube Music provider does.
+
 Open the Music Assistant panel, then Settings → Providers → Add a music provider
 → **YouTube Music (Native)**. The form asks for two things:
 
