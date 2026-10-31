@@ -2,7 +2,7 @@
 # YouTube Music provider. The version is the image tag: Music Assistant release plus
 # the first 7 characters of the provider commit (the repos/server pointer).
 name: Music Assistant (YouTube Music Native)
-version: 2.11.0b7-96ad527
+version: 2.11.0b7-2e0f378
 slug: music_assistant_ytmusic_native
 description: Music Assistant 2.11 beta with the native YouTube Music provider, for testing.
 url: https://github.com/rathlinus/innertune-desktop/tree/music-assistant/music-assistant
