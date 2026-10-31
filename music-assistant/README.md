@@ -56,18 +56,19 @@ you move the `repos/server` pointer, set it to the new `2.11.0b7-<commit>` tag
 ## The cookie
 
 The setup form asks for the Cookie header of a logged-in music.youtube.com
-session, and whether to keep the session alive.
+session. Give Music Assistant a session nothing else uses, like the desktop app
+has its own. The provider never refreshes the cookies (no RotateCookies), and a
+session nothing else touches stays logged in for months. When a browser keeps
+using the same session, it refreshes the cookies itself and YouTube signs the
+copy in Music Assistant out.
 
 - **ytm-login** (`repos/ytm-login`) logs in with its own Chrome profile and prints
-  a "Login Cookie". That is a separate session, so leave "Keep the session alive"
-  on: the provider then refreshes the cookies every 10 minutes and the login
-  does not expire.
+  a "Login Cookie". Close that Chrome window as soon as it is printed.
+- **Browser DevTools**: sign in to music.youtube.com in a private window, Network
+  tab, any request, copy the `cookie` request header, then close the window
+  without signing out.
 - **The desktop app's session** (`%APPDATA%\frontend\data\session.json`, field
-  `cookie`) works too, but turn "Keep the session alive" **off**. With it on,
-  Music Assistant rotates cookies the desktop app keeps using unchanged.
-- **Browser DevTools**: Network tab on music.youtube.com, any request, copy the
-  `cookie` request header. Close that browser window afterwards if you keep the
-  session alive.
+  `cookie`) also works, since neither side refreshes it.
 
 ## Listen
 

@@ -15,16 +15,15 @@ The provider needs an account with YouTube Music Premium. Setup refuses a free
 account, as the official YouTube Music provider does.
 
 Open the Music Assistant panel, then Settings → Providers → Add a music provider
-→ **YouTube Music (Native)**. The form asks for two things:
+→ **YouTube Music (Native)**. The form asks for the **Login Cookie**: the Cookie
+header of a logged-in music.youtube.com session that nothing else uses. Sign in
+to music.youtube.com in a private browser window, open the developer tools
+(Network tab, any request to music.youtube.com, the `cookie` request header),
+copy it, and close the window without signing out. The `ytm-login` tool from
+the innertune-desktop repo prints one too; close its Chrome window right after.
 
-- **Login Cookie**: the Cookie header of a logged-in music.youtube.com session.
-  The `ytm-login` tool from the innertune-desktop repo prints one, or copy it
-  from the browser's developer tools (Network tab, any request to
-  music.youtube.com, the `cookie` request header).
-- **Keep the session alive**: refreshes the cookies every 10 minutes so the
-  login does not expire. Leave it on for a cookie nothing else uses. Turn it off
-  if the same cookie is also used elsewhere, for example by the innertune
-  desktop app.
+A cookie copied from a browser you keep using gets signed out by YouTube after
+a short while, because the browser refreshes the session on its own.
 
 The provider's options (Premium audio quality, videos in search, reporting plays
 to the YouTube Music history) are on its settings page afterwards.
